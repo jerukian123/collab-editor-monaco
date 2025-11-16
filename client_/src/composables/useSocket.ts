@@ -1,60 +1,62 @@
-import { ref, onUnmounted } from 'vue';
+import { ref } from 'vue';
 import io, { Socket } from 'socket.io-client';
 import { SOCKET_URL } from '@/constants';
 
+// Singleton socket instance shared across all components
+let socketInstance: Socket | null = null;
+const clientId = ref<string>('');
+const isConnected = ref(false);
+
 export function useSocket() {
-  const socket = ref<Socket | null>(null);
-  const clientId = ref<string>('');
-  const isConnected = ref(false);
-
   function connect() {
-    socket.value = io(SOCKET_URL);
+    // Only create one socket instance
+    if (!socketInstance) {
+      socketInstance = io(SOCKET_URL);
 
-    socket.value.on('connect', () => {
-      isConnected.value = true;
-    });
+      socketInstance.on('connect', () => {
+        isConnected.value = true;
+        console.log('Socket connected');
+      });
 
-    socket.value.on('connected', (id: string) => {
-      clientId.value = id;
-      console.log('Connected with ID:', id);
-    });
+      socketInstance.on('connected', (id: string) => {
+        clientId.value = id;
+        console.log('Connected with ID:', id);
+      });
 
-    socket.value.on('disconnect', () => {
-      isConnected.value = false;
-    });
+      socketInstance.on('disconnect', () => {
+        isConnected.value = false;
+        console.log('Socket disconnected');
+      });
+    }
 
-    return socket.value;
+    return socketInstance;
   }
 
   function disconnect() {
-    if (socket.value) {
-      socket.value.disconnect();
-      socket.value = null;
+    if (socketInstance) {
+      socketInstance.disconnect();
+      socketInstance = null;
     }
   }
 
   function emit(event: string, data: any) {
-    socket.value?.emit(event, data);
+    socketInstance?.emit(event, data);
   }
 
   function on(event: string, callback: (...args: any[]) => void) {
-    socket.value?.on(event, callback);
+    socketInstance?.on(event, callback);
   }
 
   function off(event: string, callback?: (...args: any[]) => void) {
     if (callback) {
-      socket.value?.off(event, callback);
+      socketInstance?.off(event, callback);
     } else {
-      socket.value?.off(event);
+      socketInstance?.off(event);
     }
   }
 
-  onUnmounted(() => {
-    disconnect();
-  });
-
   return {
-    socket,
+    socket: socketInstance,
     clientId,
     isConnected,
     connect,

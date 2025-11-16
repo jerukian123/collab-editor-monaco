@@ -30,6 +30,12 @@ let socketRef: any = null;
 let editorRef: monaco.editor.IStandaloneCodeEditor | null = null;
 const remoteCursors = new Map<string, { widget: monaco.editor.IContentWidget, position: { lineNumber: number, column: number }, color: string }>();
 
+// Flag to prevent infinite loop when receiving remote updates
+let isReceivingRemoteUpdate = false;
+// Throttle timers
+let contentChangeTimeout: number | null = null;
+let cursorPositionTimeout: number | null = null;
+
 // Generate random color for a user
 const generateRandomColor = () => {
   const hue = Math.floor(Math.random() * 360);
@@ -56,24 +62,40 @@ onMounted(() => {
     });
 
     // Set up editor event handlers
-    editorRef.onKeyUp(() => {
-      if (editorRef) {
+    editorRef.onDidChangeModelContent(() => {
+      if (editorRef && !isReceivingRemoteUpdate) {
         const value = editorRef.getValue();
         console.log(value);
-        sendCode(value);
-        emit('contentChange', props.editorId, value);
+        
+        // Throttle sending to avoid overwhelming the server
+        if (contentChangeTimeout) {
+          clearTimeout(contentChangeTimeout);
+        }
+        contentChangeTimeout = window.setTimeout(() => {
+          sendCode(value);
+          emit('contentChange', props.editorId, value);
+        }, 500);
       }
     });
 
     editorRef.onDidChangeCursorPosition((cursor) => {
-      const cursorPos = cursor.position;
-      console.log(cursorPos);
-      sendCursorPosition({
-        lineNumber: cursorPos.lineNumber,
-        column: cursorPos.column,
-        socketId: clientId.value,
-        editorId: props.editorId
-      });
+      if (!isReceivingRemoteUpdate) {
+        const cursorPos = cursor.position;
+        console.log(cursorPos);
+        
+        // Throttle cursor position updates
+        if (cursorPositionTimeout) {
+          clearTimeout(cursorPositionTimeout);
+        }
+        cursorPositionTimeout = window.setTimeout(() => {
+          sendCursorPosition({
+            lineNumber: cursorPos.lineNumber,
+            column: cursorPos.column,
+            socketId: clientId.value,
+            editorId: props.editorId
+          });
+        }, 100);
+      }
     });
   }
 
@@ -85,6 +107,9 @@ onMounted(() => {
 
   socketRef.on("receive_code", (data: { code: string; editorId: number }) => {
     if (editorRef && data.editorId === props.editorId) {
+      // Set flag to prevent triggering change events
+      isReceivingRemoteUpdate = true;
+      
       // Save current cursor position
       const currentPosition = editorRef.getPosition();
       
@@ -97,6 +122,11 @@ onMounted(() => {
       }
       
       console.log("Received code for editor", data.editorId, ":", data.code);
+      
+      // Reset flag after a brief delay
+      setTimeout(() => {
+        isReceivingRemoteUpdate = false;
+      }, 50);
     }
   });
 
@@ -159,6 +189,14 @@ watch(() => props.isVisible, async (isVisible) => {
 });
 
 onUnmounted(() => {
+  // Clear any pending timeouts
+  if (contentChangeTimeout) {
+    clearTimeout(contentChangeTimeout);
+  }
+  if (cursorPositionTimeout) {
+    clearTimeout(cursorPositionTimeout);
+  }
+  
   // Leave the editor room
   if (socketRef) {
     socketRef.emit("leave_editor", props.editorId);
