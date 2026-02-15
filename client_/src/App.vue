@@ -84,7 +84,7 @@ const startSession = () => {
     files.value.push(editor)
   })
 
-  on('editor_removed', ({ editorId }: { editorId: number }) => {
+  on('editor_removed', (editorId: number) => {
     console.log('Editor removed:', editorId)
     const index = files.value.findIndex(f => f.id === editorId)
     if (index !== -1) {
@@ -150,6 +150,7 @@ const handleFileAdd = (name: string, language: string) => {
 }
 
 const handleFileDelete = (fileId: number) => {
+  console.log('Attempting to delete file with ID:', fileId)
   if (files.value.length <= 1) return
 
   // Confirm deletion if file has content
@@ -160,7 +161,7 @@ const handleFileDelete = (fileId: number) => {
     }
   }
 
-  emit('remove_editor', { editorId: fileId })
+  emit('remove_editor', fileId)
 }
 
 const handleContentChange = (fileId: number, content: string) => {

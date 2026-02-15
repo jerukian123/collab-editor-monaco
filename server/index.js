@@ -34,22 +34,23 @@ io.on("connection", (socket) => {
     
     // Add new editor
     socket.on("add_editor", (editor) => {
-        console.log(`[${new Date().toISOString()}] Adding editor:`, editor);
         const newEditor = {
             id: nextEditorId++,
             name: editor.name,
             language: editor.language
         };
         editorsList.push(newEditor);
+        console.log(`[${new Date().toISOString()}] Added editor:`, newEditor.id);
         io.emit("editor_added", newEditor);
     });
     
     // Remove editor
     socket.on("remove_editor", (editorId) => {
         const index = editorsList.findIndex(e => e.id === editorId);
+        console.log(`[${new Date().toISOString()}] remove editor:`, editorId);
         if (index !== -1 && editorsList.length > 1) {
             editorsList.splice(index, 1);
-            io.emit("editor_removed", editorId);
+            socket.emit("editor_removed", editorId);
         }
     });
     
