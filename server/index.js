@@ -24,13 +24,13 @@ const io = new Server(server, {
     },
 })
 
+
 io.on("connection", (socket) => {
     console.log(`[${new Date().toISOString()}] User connected: ${socket.id}`);
     socket.emit("connected", socket.id);
     
     // Send current editors list to new client
     socket.emit("editors_list", editorsList);
-    console.log(`[${socket.id}] Sent editors list`);
     
     // Add new editor
     socket.on("add_editor", (editor) => {
@@ -41,7 +41,6 @@ io.on("connection", (socket) => {
         };
         editorsList.push(newEditor);
         io.emit("editor_added", newEditor);
-        console.log(`[${socket.id}] Editor added:`, newEditor);
     });
     
     // Remove editor
@@ -50,26 +49,36 @@ io.on("connection", (socket) => {
         if (index !== -1 && editorsList.length > 1) {
             editorsList.splice(index, 1);
             io.emit("editor_removed", editorId);
-            console.log(`[${socket.id}] Editor removed:`, editorId);
         }
     });
     
     // Join a specific editor room
     socket.on("join_editor", (editorId) => {
+
         const room = `editor-${editorId}`;
+
         socket.join(room);
-        console.log(`[${socket.id}] Joined room: ${room}`);
+
+        const clients = Array.from(io.sockets.adapter.rooms.get(room) || []);
+
+        socket.emit("room_users", clients);
+
+        socket.to(room).emit("user_joined", socket.id);
     });
     
     // Leave a specific editor room
     socket.on("leave_editor", (editorId) => {
         const room = `editor-${editorId}`;
-        socket.leave(room);
         console.log(`[${socket.id}] Left room: ${room}`);
+        // Broadcast to others in the room that this user left
+        socket.to(room).emit("user_left", { socketId: socket.id });
+        socket.leave(room);
     });
-    
+
     socket.on("disconnect", () => {
         console.log(`[${new Date().toISOString()}] User disconnected: ${socket.id}`);
+        // Broadcast to all rooms that this user disconnected
+        socket.broadcast.emit("user_left", { socketId: socket.id });
     })
     
     // Track message count per socket
@@ -77,9 +86,9 @@ io.on("connection", (socket) => {
     let cursorPositionCount = 0;
     
     socket.on("send_code", (data) => {
+        console.log(`[${socket.id}] "send_code" event received for editor ${data.editorId}`);
         sendCodeCount++;
         const room = `editor-${data.editorId}`;
-        console.log(`[${socket.id}] SEND_CODE #${sendCodeCount} to room: ${room}, code length: ${data.code?.length || 0}`);
         
         // Warning if too many messages
         if (sendCodeCount > 100) {
@@ -96,11 +105,10 @@ io.on("connection", (socket) => {
         
         // Only log every 10th cursor update to avoid spam
         if (cursorPositionCount % 10 === 0) {
-            console.log(`[${socket.id}] CURSOR_POSITION #${cursorPositionCount} to room: ${room}`);
         }
-        
+        console.log(`[${socket.id}] Cursor position:`, cursorData.position);
         // Broadcast only to users in the same editor room
-        socket.to(room).emit("receive_cursor_position", cursorData);
+        socket.to(room).emit("receive_cursor_position", {position: cursorData.position, socketId: socket.id});    
     })
 })
 

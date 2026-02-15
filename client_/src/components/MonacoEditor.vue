@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
 import * as monaco from 'monaco-editor'
-import { io, Socket } from 'socket.io-client'
+import type { Socket } from 'socket.io-client'
+import { useSocket } from '@/composables/useSocket'
 
 interface Props {
   fileId: number
@@ -29,8 +30,8 @@ const emit = defineEmits<{
   cursorMove: [position: CursorPosition]
 }>()
 
-// Socket.IO connection
-let socket: Socket | null = null
+// Socket.IO connection (using singleton)
+const { socket, clientId, emit: socketEmit, on: socketOn } = useSocket()
 
 // Monaco editor instance
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
@@ -68,7 +69,7 @@ const createCursorWidget = (
       const domNode = document.createElement('div')
       domNode.style.position = 'absolute'
       domNode.style.width = '2px'
-      domNode.style.height = '18px'
+      domNode.style.height = '28px'
       domNode.style.backgroundColor = color
       domNode.style.zIndex = '10'
 
@@ -120,12 +121,11 @@ const initEditor = () => {
       const content = editor!.getValue()
       emit('contentChange', props.fileId, content)
 
-      if (socket) {
-        socket.emit('send_code', {
-          editorId: props.fileId,
-          code: content
-        })
-      }
+      // Emit code changes via socket
+      socketEmit('send_code', {
+        editorId: props.fileId,
+        code: content
+      })
     }, 500)
   })
 
@@ -141,27 +141,30 @@ const initEditor = () => {
       }
       emit('cursorMove', position)
 
-      if (socket) {
-        socket.emit('send_cursor_position', {
-          editorId: props.fileId,
-          position
-        })
-      }
+      // Emit cursor position via socket
+      socketEmit('send_cursor_position', {
+        editorId: props.fileId,
+        position
+      })
     }, 100)
   })
 }
 
-// Initialize Socket.IO
-const initSocket = () => {
-  socket = io('http://localhost:3000')
+// Setup Socket.IO event handlers
+const setupSocketHandlers = () => {
+  // If already connected, join room immediately (connect event already fired)
+  if (socket?.connected) {
+    socketEmit('join_editor', props.fileId)
+  }
 
-  socket.on('connect', () => {
-    console.log('Connected to server')
-    socket!.emit('join_editor', props.fileId)
+  // Handle reconnections
+  socket?.on('connect', () => {
+    socketEmit('join_editor', props.fileId)
   })
 
-  socket.on('receive_code', ({ code, socketId }) => {
-    if (!editor || socketId === socket!.id) return
+  socket?.on('receive_code', ({ code, socketId }) => {
+    console.log('[MonacoEditor] "receive_code" event fired, from socketId:', socketId, 'my socket.id:', clientId.value)
+    if (!editor) return
 
     isReceivingRemoteUpdate = true
     const position = editor.getPosition()
@@ -170,9 +173,10 @@ const initSocket = () => {
     isReceivingRemoteUpdate = false
   })
 
-  socket.on('receive_cursor_position', ({ position, socketId }) => {
-    if (!editor || socketId === socket!.id) return
-
+  socket?.on('receive_cursor_position', ({ position, socketId }) => {
+    console.log('[MonacoEditor] "receive_cursor_position" event fired, from socketId:', socketId, 'my socket.id:', clientId.value)
+    if (!editor) return
+    console.log('Passed filter, rendering cursor for:', socketId, position)
     const color = generateColorFromSocketId(socketId)
     const widgetId = `cursor-${socketId}`
 
@@ -187,7 +191,7 @@ const initSocket = () => {
     cursorWidgets.set(widgetId, widget)
   })
 
-  socket.on('user_left', ({ socketId }) => {
+  socket?.on('user_left', ({ socketId }) => {
     const widgetId = `cursor-${socketId}`
     if (cursorWidgets.has(widgetId) && editor) {
       editor.removeContentWidget(cursorWidgets.get(widgetId)!)
@@ -212,8 +216,8 @@ watch(() => props.language, (newLanguage) => {
 
 // Handle file changes
 watch(() => props.fileId, (newFileId, oldFileId) => {
-  if (oldFileId !== undefined && socket) {
-    socket.emit('leave_editor', oldFileId)
+  if (oldFileId !== undefined) {
+    socketEmit('leave_editor', oldFileId)
   }
 
   // Clear all cursor widgets
@@ -224,9 +228,7 @@ watch(() => props.fileId, (newFileId, oldFileId) => {
     cursorWidgets.clear()
   }
 
-  if (socket) {
-    socket.emit('join_editor', newFileId)
-  }
+  socketEmit('join_editor', newFileId)
 
   if (editor) {
     isReceivingRemoteUpdate = true
@@ -248,14 +250,12 @@ defineExpose({
 
 onMounted(() => {
   initEditor()
-  initSocket()
+  setupSocketHandlers()
 })
 
 onBeforeUnmount(() => {
-  if (socket) {
-    socket.emit('leave_editor', props.fileId)
-    socket.disconnect()
-  }
+  // Leave the current editor room
+  socketEmit('leave_editor', props.fileId)
 
   if (codeChangeTimer) clearTimeout(codeChangeTimer)
   if (cursorMoveTimer) clearTimeout(cursorMoveTimer)

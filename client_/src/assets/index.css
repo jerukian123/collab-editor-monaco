@@ -51,33 +51,9 @@
 
 @layer base {
   * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    border-color: hsl(var(--border));
+    @apply border-border;
   }
-
-  body,
-  html {
-    overflow: hidden;
-    width: 100%;
-    height: 100%;
+  body {
     @apply bg-background text-foreground;
-  }
-
-  #app {
-    width: 100%;
-    height: 100%;
-  }
-
-  main {
-    width: 100%;
-    height: 100%;
-  }
-
-  /* Ensure Monaco editor gets proper dimensions */
-  .monaco-editor {
-    width: 100% !important;
-    height: 100% !important;
   }
 }

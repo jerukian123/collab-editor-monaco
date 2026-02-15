@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useDark } from '@vueuse/core'
-import { io, Socket } from 'socket.io-client'
+import { useSocket } from './composables/useSocket'
 import WelcomeScreen from './components/WelcomeScreen.vue'
 import EditorShell from './components/EditorShell.vue'
 
@@ -18,9 +18,10 @@ interface UserInfo {
   currentFileId?: number
 }
 
+// Socket connection (singleton)
+const { socket, clientId, isConnected, connect, emit, on } = useSocket()
+
 // State
-const isConnected = ref(false)
-const clientId = ref('')
 const users = ref(new Map<string, UserInfo>())
 const files = ref<EditorFile[]>([])
 const activeFileId = ref<number | null>(null)
@@ -28,9 +29,6 @@ const activeFileId = ref<number | null>(null)
 // Theme management
 const isDark = useDark()
 const monacoTheme = computed(() => isDark.value ? 'vs-dark' : 'vs-light')
-
-// Socket.IO instance
-let socket: Socket | null = null
 
 // Generate color from socket ID
 const generateColorFromSocketId = (socketId: string): string => {
@@ -45,28 +43,26 @@ const generateColorFromSocketId = (socketId: string): string => {
 
 // Start session (connect to Socket.IO)
 const startSession = () => {
-  socket = io('http://localhost:3000')
+  console.log('[App.vue] startSession() called')
 
-  socket.on('connect', () => {
-    if (!socket?.id) return
-    console.log('Connected to server:', socket.id)
-    isConnected.value = true
-    clientId.value = socket.id
+  // Connect using singleton pattern
+  const socketInstance = connect()
+  console.log('[App.vue] connect() returned:', socketInstance ? 'socket instance' : 'null')
+  if (!socketInstance) return
+
+  // Handle initial connection - add self to users when we receive our ID
+  on('connected', (id: string) => {
+    console.log('Connected to server:', id)
 
     // Add self to users
-    users.value.set(socket.id, {
-      socketId: socket.id,
-      color: generateColorFromSocketId(socket.id)
+    users.value.set(id, {
+      socketId: id,
+      color: generateColorFromSocketId(id)
     })
   })
 
-  socket.on('disconnect', () => {
-    console.log('Disconnected from server')
-    isConnected.value = false
-  })
-
   // File management events
-  socket.on('editors_list', (editorsList: EditorFile[]) => {
+  on('editors_list', (editorsList: EditorFile[]) => {
     console.log('Received editors list:', editorsList)
     files.value = editorsList
     if (editorsList.length > 0 && !activeFileId.value && editorsList[0]) {
@@ -74,12 +70,12 @@ const startSession = () => {
     }
   })
 
-  socket.on('editor_added', ({ editor }: { editor: EditorFile }) => {
+  on('editor_added', ({ editor }: { editor: EditorFile }) => {
     console.log('Editor added:', editor)
     files.value.push(editor)
   })
 
-  socket.on('editor_removed', ({ editorId }: { editorId: number }) => {
+  on('editor_removed', ({ editorId }: { editorId: number }) => {
     console.log('Editor removed:', editorId)
     const index = files.value.findIndex(f => f.id === editorId)
     if (index !== -1) {
@@ -93,49 +89,59 @@ const startSession = () => {
   })
 
   // User presence events
-  socket.on('user_joined', ({ socketId }: { socketId: string }) => {
-    console.log('User joined:', socketId)
+  on('user_joined', (socketId: string) => {
+    console.log('[DEBUG] user_joined event received with socketId:', socketId)
+    console.log('[DEBUG] My clientId is:', clientId.value)
+    console.log('[DEBUG] Current users:', Array.from(users.value.keys()))
     if (!users.value.has(socketId)) {
       users.value.set(socketId, {
         socketId,
         color: generateColorFromSocketId(socketId)
       })
+      console.log('[DEBUG] Added new user:', socketId)
     }
   })
 
-  socket.on('user_left', ({ socketId }: { socketId: string }) => {
+  on('user_left', ({ socketId }: { socketId: string }) => {
     console.log('User left:', socketId)
     users.value.delete(socketId)
+  })
+
+  on('room_users', (clients : string[]) => {
+    // Sync users map with current room users
+    const newUsersMap = new Map<string, UserInfo>()
+    clients.forEach(clientId => {
+      newUsersMap.set(clientId, {
+        socketId: clientId,
+        color: generateColorFromSocketId(clientId)
+      })
+    })
+    users.value = newUsersMap
   })
 }
 
 // File operations
 const handleFileSelect = (fileId: number) => {
-  if (socket && activeFileId.value !== null) {
-    socket.emit('leave_editor', activeFileId.value)
+  if (activeFileId.value !== null) {
+    emit('leave_editor', activeFileId.value)
   }
 
   activeFileId.value = fileId
+  emit('join_editor', fileId)
 
-  if (socket) {
-    socket.emit('join_editor', fileId)
-
-    // Update current user's file
-    const currentUser = users.value.get(clientId.value)
-    if (currentUser) {
-      currentUser.currentFileId = fileId
-    }
+  // Update current user's file
+  const currentUser = users.value.get(clientId.value)
+  if (currentUser) {
+    currentUser.currentFileId = fileId
   }
 }
 
 const handleFileAdd = (name: string, language: string) => {
-  if (!socket) return
-
-  socket.emit('add_editor', { name, language })
+  emit('add_editor', { name, language })
 }
 
 const handleFileDelete = (fileId: number) => {
-  if (!socket || files.value.length <= 1) return
+  if (files.value.length <= 1) return
 
   // Confirm deletion if file has content
   const file = files.value.find(f => f.id === fileId)
@@ -145,7 +151,7 @@ const handleFileDelete = (fileId: number) => {
     }
   }
 
-  socket.emit('remove_editor', { editorId: fileId })
+  emit('remove_editor', { editorId: fileId })
 }
 
 const handleContentChange = (fileId: number, content: string) => {
