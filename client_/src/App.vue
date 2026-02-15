@@ -1,95 +1,179 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
-import Playground from './components/Playground.vue';
-import Sidebar from './components/Sidebar.vue';
-import { useSocket } from '@/composables/useSocket';
-import { useEditorManager } from '@/composables/useEditorManager';
-import type { Editor } from '@/types';
+import { ref, computed } from 'vue'
+import { useDark } from '@vueuse/core'
+import { io, Socket } from 'socket.io-client'
+import WelcomeScreen from './components/WelcomeScreen.vue'
+import EditorShell from './components/EditorShell.vue'
 
-const { connect, emit, on } = useSocket();
-const {
-  editors,
-  activeEditorId,
-  setEditorsList,
-  addEditor,
-  removeEditor,
-  selectEditor,
-  updateEditorContent
-} = useEditorManager();
-
-onMounted(() => {
-  connect();
-
-  // Receive initial editors list
-  on('editors_list', (editorsList: Omit<Editor, 'content'>[]) => {
-    setEditorsList(editorsList);
-    console.log('Received editors list:', editorsList);
-  });
-
-  // Handle editor added by another client
-  on('editor_added', (editor: Omit<Editor, 'content'>) => {
-    addEditor(editor);
-    console.log('Editor added from server:', editor);
-  });
-
-  // Handle editor removed by another client
-  on('editor_removed', (editorId: number) => {
-    removeEditor(editorId);
-    console.log('Editor removed from server:', editorId);
-  });
-});
-
-function handleEditorSelected(id: number) {
-  selectEditor(id);
-  console.log('Editor selected:', id);
+interface EditorFile {
+  id: number
+  name: string
+  language: string
+  content?: string
 }
 
-function handleEditorAdded(editor: { id: number; name: string; language: string }) {
-  emit('add_editor', { name: editor.name, language: editor.language });
+interface UserInfo {
+  socketId: string
+  color: string
+  currentFileId?: number
 }
 
-function handleEditorRemoved(id: number) {
-  emit('remove_editor', id);
+// State
+const isConnected = ref(false)
+const clientId = ref('')
+const users = ref(new Map<string, UserInfo>())
+const files = ref<EditorFile[]>([])
+const activeFileId = ref<number | null>(null)
+
+// Theme management
+const isDark = useDark()
+const monacoTheme = computed(() => isDark.value ? 'vs-dark' : 'vs-light')
+
+// Socket.IO instance
+let socket: Socket | null = null
+
+// Generate color from socket ID
+const generateColorFromSocketId = (socketId: string): string => {
+  let hash = 0
+  for (let i = 0; i < socketId.length; i++) {
+    hash = socketId.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  const hue = hash % 360
+  const lightness = isDark.value ? 60 : 40
+  return `hsl(${hue}, 70%, ${lightness}%)`
 }
 
-function handleContentChange(editorId: number, content: string) {
-  updateEditorContent(editorId, content);
+// Start session (connect to Socket.IO)
+const startSession = () => {
+  socket = io('http://localhost:3000')
+
+  socket.on('connect', () => {
+    if (!socket?.id) return
+    console.log('Connected to server:', socket.id)
+    isConnected.value = true
+    clientId.value = socket.id
+
+    // Add self to users
+    users.value.set(socket.id, {
+      socketId: socket.id,
+      color: generateColorFromSocketId(socket.id)
+    })
+  })
+
+  socket.on('disconnect', () => {
+    console.log('Disconnected from server')
+    isConnected.value = false
+  })
+
+  // File management events
+  socket.on('editors_list', (editorsList: EditorFile[]) => {
+    console.log('Received editors list:', editorsList)
+    files.value = editorsList
+    if (editorsList.length > 0 && !activeFileId.value && editorsList[0]) {
+      activeFileId.value = editorsList[0].id
+    }
+  })
+
+  socket.on('editor_added', ({ editor }: { editor: EditorFile }) => {
+    console.log('Editor added:', editor)
+    files.value.push(editor)
+  })
+
+  socket.on('editor_removed', ({ editorId }: { editorId: number }) => {
+    console.log('Editor removed:', editorId)
+    const index = files.value.findIndex(f => f.id === editorId)
+    if (index !== -1) {
+      files.value.splice(index, 1)
+
+      // Switch to first file if deleted file was active
+      if (activeFileId.value === editorId && files.value.length > 0 && files.value[0]) {
+        activeFileId.value = files.value[0].id
+      }
+    }
+  })
+
+  // User presence events
+  socket.on('user_joined', ({ socketId }: { socketId: string }) => {
+    console.log('User joined:', socketId)
+    if (!users.value.has(socketId)) {
+      users.value.set(socketId, {
+        socketId,
+        color: generateColorFromSocketId(socketId)
+      })
+    }
+  })
+
+  socket.on('user_left', ({ socketId }: { socketId: string }) => {
+    console.log('User left:', socketId)
+    users.value.delete(socketId)
+  })
+}
+
+// File operations
+const handleFileSelect = (fileId: number) => {
+  if (socket && activeFileId.value !== null) {
+    socket.emit('leave_editor', activeFileId.value)
+  }
+
+  activeFileId.value = fileId
+
+  if (socket) {
+    socket.emit('join_editor', fileId)
+
+    // Update current user's file
+    const currentUser = users.value.get(clientId.value)
+    if (currentUser) {
+      currentUser.currentFileId = fileId
+    }
+  }
+}
+
+const handleFileAdd = (name: string, language: string) => {
+  if (!socket) return
+
+  socket.emit('add_editor', { name, language })
+}
+
+const handleFileDelete = (fileId: number) => {
+  if (!socket || files.value.length <= 1) return
+
+  // Confirm deletion if file has content
+  const file = files.value.find(f => f.id === fileId)
+  if (file?.content && file.content.trim().length > 0) {
+    if (!confirm(`Delete "${file.name}"? This cannot be undone.`)) {
+      return
+    }
+  }
+
+  socket.emit('remove_editor', { editorId: fileId })
+}
+
+const handleContentChange = (fileId: number, content: string) => {
+  // Update local cache
+  const file = files.value.find(f => f.id === fileId)
+  if (file) {
+    file.content = content
+  }
 }
 </script>
 
 <template>
-  <main class="app-container">
-    <Sidebar 
-      :editors="editors"
-      :active-editor-id="activeEditorId"
-      @editor-selected="handleEditorSelected"
-      @editor-added="handleEditorAdded"
-      @editor-removed="handleEditorRemoved"
+  <div>
+    <WelcomeScreen
+      v-if="!isConnected"
+      @start-session="startSession"
     />
-    <div class="editor-container">
-      <Playground 
-        v-for="editor in editors"
-        :key="editor.id"
-        v-show="editor.id === activeEditorId"
-        :editor-id="editor.id"
-        :language="editor.language"
-        :initial-content="editor.content"
-        :is-visible="editor.id === activeEditorId"
-        @content-change="handleContentChange"
-      />
-    </div>
-  </main>
+
+    <EditorShell
+      v-else
+      :files="files"
+      :active-file-id="activeFileId"
+      :users="users"
+      :theme="monacoTheme"
+      @file-select="handleFileSelect"
+      @file-add="handleFileAdd"
+      @file-delete="handleFileDelete"
+      @content-change="handleContentChange"
+    />
+  </div>
 </template>
-
-<style scoped>
-.app-container {
-  display: flex;
-  width: 100%;
-  height: 100%;
-}
-
-.editor-container {
-  flex: 1;
-  overflow: hidden;
-}
-</style>
