@@ -1,5 +1,26 @@
 <template>
-  <div ref="editorContainer" style="height: 100vh; width: 100vw"></div>
+  <div style="height: 100vh; width: 100%; display: flex; flex-direction: column;">
+    <div style="height: 40px; background: #1e1e1e; border-bottom: 1px solid #333; display: flex; align-items: center; padding: 0 16px; color: #ccc; font-size: 14px;">
+      <span style="opacity: 0.7;">Connected users:</span>
+      <div style="margin-left: 12px; display: flex; gap: 8px;">
+        <div 
+          v-for="[socketId, cursor] in remoteCursors" 
+          :key="socketId"
+          :style="{
+            background: cursor.color,
+            color: '#fff',
+            padding: '4px 10px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            fontWeight: '500'
+          }"
+        >
+          {{ socketId.substring(0, 8) }}
+        </div>
+      </div>
+    </div>
+    <div ref="editorContainer" style="flex: 1;"></div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -28,7 +49,7 @@ const editorContainer = ref<HTMLDivElement | null>(null);
 const clientId = ref<string>("");
 let socketRef: any = null;
 let editorRef: monaco.editor.IStandaloneCodeEditor | null = null;
-const remoteCursors = new Map<string, { widget: monaco.editor.IContentWidget, position: { lineNumber: number, column: number }, color: string }>();
+const remoteCursors = ref(new Map<string, { widget: monaco.editor.IContentWidget, position: { lineNumber: number, column: number }, color: string }>());
 
 // Flag to prevent infinite loop when receiving remote updates
 let isReceivingRemoteUpdate = false;
@@ -135,7 +156,7 @@ onMounted(() => {
     // Only show cursors for the same editor room
     if (editorRef && data.socketId !== clientId.value && data.editorId === props.editorId) {
       // Check if we already have a widget for this user
-      const existingCursor = remoteCursors.get(data.socketId);
+      const existingCursor = remoteCursors.value.get(data.socketId);
       
       if (existingCursor) {
         // Update position and re-layout
@@ -163,7 +184,7 @@ onMounted(() => {
             return `cursor-${data.socketId}`;
           },
           getPosition: function () {
-            const cursorData = remoteCursors.get(data.socketId);
+            const cursorData = remoteCursors.value.get(data.socketId);
             return {
               position: cursorData ? cursorData.position : position,
               preference: [monaco.editor.ContentWidgetPositionPreference.EXACT]
@@ -172,7 +193,7 @@ onMounted(() => {
         };
 
         editorRef.addContentWidget(cursorWidget);
-        remoteCursors.set(data.socketId, { widget: cursorWidget, position, color });
+        remoteCursors.value.set(data.socketId, { widget: cursorWidget, position, color });
         console.log("Added cursor widget for user:", data.socketId);
       }
     }
