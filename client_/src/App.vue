@@ -27,8 +27,17 @@ const files = ref<EditorFile[]>([])
 const activeFileId = ref<number | null>(null)
 
 // Theme management
-const isDark = useDark()
+const isDark = useDark({
+  selector: 'html',
+  attribute: 'class',
+  valueDark: 'dark',
+  valueLight: '',
+})
 const monacoTheme = computed(() => isDark.value ? 'vs-dark' : 'vs-light')
+
+// Debug: Log initial theme state
+console.log('[App.vue] Initial isDark:', isDark.value)
+console.log('[App.vue] HTML element class:', document.documentElement.className)
 
 // Generate color from socket ID
 const generateColorFromSocketId = (socketId: string): string => {
@@ -70,7 +79,7 @@ const startSession = () => {
     }
   })
 
-  on('editor_added', ({ editor }: { editor: EditorFile }) => {
+  on('editor_added', (editor: EditorFile) => {
     console.log('Editor added:', editor)
     files.value.push(editor)
   })

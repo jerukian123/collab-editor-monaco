@@ -34,6 +34,7 @@ io.on("connection", (socket) => {
     
     // Add new editor
     socket.on("add_editor", (editor) => {
+        console.log(`[${new Date().toISOString()}] Adding editor:`, editor);
         const newEditor = {
             id: nextEditorId++,
             name: editor.name,
@@ -69,7 +70,6 @@ io.on("connection", (socket) => {
     // Leave a specific editor room
     socket.on("leave_editor", (editorId) => {
         const room = `editor-${editorId}`;
-        console.log(`[${socket.id}] Left room: ${room}`);
         // Broadcast to others in the room that this user left
         socket.to(room).emit("user_left", { socketId: socket.id });
         socket.leave(room);
@@ -86,7 +86,6 @@ io.on("connection", (socket) => {
     let cursorPositionCount = 0;
     
     socket.on("send_code", (data) => {
-        console.log(`[${socket.id}] "send_code" event received for editor ${data.editorId}`);
         sendCodeCount++;
         const room = `editor-${data.editorId}`;
         
@@ -106,7 +105,6 @@ io.on("connection", (socket) => {
         // Only log every 10th cursor update to avoid spam
         if (cursorPositionCount % 10 === 0) {
         }
-        console.log(`[${socket.id}] Cursor position:`, cursorData.position);
         // Broadcast only to users in the same editor room
         socket.to(room).emit("receive_cursor_position", {position: cursorData.position, socketId: socket.id});    
     })
