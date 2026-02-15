@@ -50,17 +50,15 @@
 }
 
 @layer base {
-  *:not(.monaco-editor *):not(.monaco-editor):not(.monaco-workbench *) {
+  * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    @apply border-border;
+    border-color: hsl(var(--border));
   }
 
   body,
   html {
-    margin: 0;
-    padding: 0;
     overflow: hidden;
     width: 100%;
     height: 100%;
