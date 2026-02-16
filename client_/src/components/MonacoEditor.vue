@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import * as monaco from 'monaco-editor'
-import type { Socket } from 'socket.io-client'
 import { useSocket } from '@/composables/useSocket'
 
 interface Props {
@@ -16,11 +15,6 @@ interface CursorPosition {
   column: number
 }
 
-interface UserInfo {
-  socketId: string
-  color: string
-}
-
 const props = withDefaults(defineProps<Props>(), {
   theme: 'vs-dark'
 })
@@ -31,7 +25,7 @@ const emit = defineEmits<{
 }>()
 
 // Socket.IO connection (using singleton)
-const { socket, clientId, emit: socketEmit, on: socketOn } = useSocket()
+const { socket, clientId, emit: socketEmit } = useSocket()
 
 // Monaco editor instance
 let editor: monaco.editor.IStandaloneCodeEditor | null = null

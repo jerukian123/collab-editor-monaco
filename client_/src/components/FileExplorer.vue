@@ -3,7 +3,6 @@ import { ref, computed } from 'vue'
 import { ChevronLeft, ChevronRight, Plus, Trash2, FileCode } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
 import {
   Dialog,
   DialogContent,

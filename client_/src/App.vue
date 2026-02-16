@@ -19,7 +19,7 @@ interface UserInfo {
 }
 
 // Socket connection (singleton)
-const { socket, clientId, isConnected, connect, emit, on } = useSocket()
+const { clientId, isConnected, connect, emit, on } = useSocket()
 
 // State
 const users = ref(new Map<string, UserInfo>())

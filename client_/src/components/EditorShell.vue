@@ -71,7 +71,7 @@ watch(sidebarExpanded, () => {
         :users="users"
         :expanded="sidebarExpanded"
         @file-select="emit('file-select', $event)"
-        @file-add="emit('file-add', $event, arguments[1])"
+        @file-add="(name, language) => emit('file-add', name, language)"
         @file-delete="emit('file-delete', $event)"
         @toggle-sidebar="sidebarExpanded = !sidebarExpanded"
       />
@@ -85,7 +85,7 @@ watch(sidebarExpanded, () => {
           :initial-content="activeFile.content ?? ''"
           :language="activeFile.language"
           :theme="theme"
-          @content-change="emit('content-change', $event, arguments[1])"
+          @content-change="(fileId, content) => emit('content-change', fileId, content)"
         />
       </div>
     </div>
