@@ -2,6 +2,7 @@ const express = require("express");
 const app = express();
 const cors = require("cors");
 const http = require("http");
+const { executeCode, getSupportedLanguages } = require('./services/executionService');
 
 app.use(cors());
 
@@ -102,13 +103,57 @@ io.on("connection", (socket) => {
     socket.on("send_cursor_position", (cursorData) => {
         cursorPositionCount++;
         const room = `editor-${cursorData.editorId}`;
-        
+
         // Only log every 10th cursor update to avoid spam
         if (cursorPositionCount % 10 === 0) {
         }
         // Broadcast only to users in the same editor room
-        socket.to(room).emit("receive_cursor_position", {position: cursorData.position, socketId: socket.id});    
+        socket.to(room).emit("receive_cursor_position", {position: cursorData.position, socketId: socket.id});
     })
+
+    // Code execution
+    socket.on("execute_code", async (data) => {
+        const { fileId, code, language } = data;
+        const executionId = `${socket.id}-${Date.now()}`;
+
+        console.log(`[${new Date().toISOString()}] execute_code from ${socket.id}, language: ${language}`);
+
+        try {
+            const result = await executeCode(code, language);
+
+            const room = `editor-${fileId}`;
+            io.to(room).emit("execution_result", {
+                fileId,
+                executionId,
+                output: result.stdout,
+                stderr: result.stderr,
+                exitCode: result.exitCode,
+                executionTime: result.executionTime,
+                language: result.language,
+                user: {
+                    socketId: socket.id
+                },
+                timestamp: new Date().toISOString()
+            });
+
+            console.log(`[${new Date().toISOString()}] execution_result sent to room ${room}`);
+        } catch (error) {
+            const room = `editor-${fileId}`;
+            io.to(room).emit("execution_error", {
+                fileId,
+                executionId,
+                error: error.message,
+                timestamp: new Date().toISOString()
+            });
+
+            console.error(`[${new Date().toISOString()}] execution_error:`, error.message);
+        }
+    });
+
+    // Get supported languages
+    socket.on("get_supported_languages", () => {
+        socket.emit("supported_languages", getSupportedLanguages());
+    });
 })
 
 
