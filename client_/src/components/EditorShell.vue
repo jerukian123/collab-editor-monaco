@@ -126,6 +126,8 @@ const handleCloseOutput = () => {
     <TopBar
       :active-file-name="activeFileName"
       :users="users"
+      :output-pane-visible="outputPaneVisible"
+      @toggle-output="outputPaneVisible = !outputPaneVisible"
     />
 
     <div class="flex flex-1 overflow-hidden">

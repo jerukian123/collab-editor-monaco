@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Code2 } from 'lucide-vue-next'
+import { Code2, Terminal } from 'lucide-vue-next'
 import ThemeToggle from './ThemeToggle.vue'
 import UserAvatar from './UserAvatar.vue'
 
@@ -12,9 +12,15 @@ interface UserInfo {
 interface Props {
   activeFileName: string
   users: Map<string, UserInfo>
+  outputPaneVisible: boolean
+}
+
+interface Emits {
+  (e: 'toggle-output'): void
 }
 
 const props = defineProps<Props>()
+const emit = defineEmits<Emits>()
 
 const userList = computed(() => Array.from(props.users.values()))
 const visibleUsers = computed(() => userList.value.slice(0, 5))
@@ -33,6 +39,20 @@ const overflowCount = computed(() => Math.max(0, userList.value.length - 5))
         <span class="text-sm text-muted-foreground">
           {{ activeFileName }}
         </span>
+
+        <button
+          :class="[
+            'flex items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors',
+            outputPaneVisible
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+          ]"
+          title="Toggle output pane"
+          @click="emit('toggle-output')"
+        >
+          <Terminal :size="14" />
+          <span>Output</span>
+        </button>
       </div>
 
       <!-- Right: User avatars and theme toggle -->
