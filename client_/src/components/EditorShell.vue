@@ -4,6 +4,8 @@ import { useStorage } from '@vueuse/core'
 import TopBar from './TopBar.vue'
 import FileExplorer from './FileExplorer.vue'
 import MonacoEditor from './MonacoEditor.vue'
+import OutputPane from './OutputPane.vue'
+import { useCodeExecution } from '@/composables/useCodeExecution'
 
 interface EditorFile {
   id: number
@@ -38,7 +40,22 @@ const emit = defineEmits<Emits>()
 // Sidebar state (persisted to localStorage)
 const sidebarExpanded = useStorage('monaco-collab-sidebar-expanded', true)
 
+// Output pane state (persisted to localStorage)
+const outputPaneVisible = useStorage('monaco-collab-output-visible', false)
+const outputPaneWidth = useStorage('monaco-collab-output-width', 400)
+
 const editorRef = ref<InstanceType<typeof MonacoEditor> | null>(null)
+const outputPaneRef = ref<InstanceType<typeof OutputPane> | null>(null)
+
+// Code execution
+const {
+  isExecuting,
+  supportedLanguages,
+  executeCode,
+  fetchSupportedLanguages,
+  onExecutionResult,
+  onExecutionError
+} = useCodeExecution()
 
 // Get active file data
 const activeFile = computed(() => {
@@ -55,6 +72,53 @@ watch(sidebarExpanded, () => {
     editorRef.value?.layout()
   })
 })
+
+// Watch output pane visibility and trigger editor resize
+watch(outputPaneVisible, () => {
+  nextTick(() => {
+    editorRef.value?.layout()
+  })
+})
+
+// Watch file changes - clear output pane
+watch(() => props.activeFileId, () => {
+  outputPaneRef.value?.clearForFile()
+})
+
+// Fetch supported languages on mount
+fetchSupportedLanguages()
+
+// Handle execution
+const handleExecute = () => {
+  if (!activeFile.value || !editorRef.value) return
+
+  const code = activeFile.value.content ?? ''
+  if (!code.trim()) {
+    console.warn('No code to execute')
+    return
+  }
+
+  // Show output pane if hidden
+  if (!outputPaneVisible.value) {
+    outputPaneVisible.value = true
+  }
+
+  executeCode(activeFile.value.id, code, activeFile.value.language)
+}
+
+// Listen for execution results
+onExecutionResult((result) => {
+  outputPaneRef.value?.addResult(result)
+})
+
+onExecutionError((error) => {
+  outputPaneRef.value?.addResult(error)
+})
+
+// Close output pane
+const handleCloseOutput = () => {
+  outputPaneVisible.value = false
+}
 </script>
 
 <template>
@@ -76,16 +140,30 @@ watch(sidebarExpanded, () => {
         @toggle-sidebar="sidebarExpanded = !sidebarExpanded"
       />
 
-      <div class="flex-1">
-        <MonacoEditor
-          v-if="activeFile"
-          :key="activeFile.id"
-          ref="editorRef"
-          :file-id="activeFile.id"
-          :initial-content="activeFile.content ?? ''"
-          :language="activeFile.language"
-          :theme="theme"
-          @content-change="(fileId, content) => emit('content-change', fileId, content)"
+      <div class="flex flex-1">
+        <div class="flex-1">
+          <MonacoEditor
+            v-if="activeFile"
+            :key="activeFile.id"
+            ref="editorRef"
+            :file-id="activeFile.id"
+            :initial-content="activeFile.content ?? ''"
+            :language="activeFile.language"
+            :theme="theme"
+            @content-change="(fileId, content) => emit('content-change', fileId, content)"
+          />
+        </div>
+
+        <OutputPane
+          v-if="outputPaneVisible"
+          ref="outputPaneRef"
+          :file-id="activeFileId"
+          :language="activeFile?.language ?? ''"
+          :is-executing="isExecuting"
+          :supported-languages="supportedLanguages"
+          :style="{ width: `${outputPaneWidth}px` }"
+          @execute="handleExecute"
+          @close="handleCloseOutput"
         />
       </div>
     </div>
