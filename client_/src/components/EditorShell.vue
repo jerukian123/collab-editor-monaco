@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, computed } from 'vue'
+import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
 import { useStorage } from '@vueuse/core'
 import TopBar from './TopBar.vue'
 import FileExplorer from './FileExplorer.vue'
@@ -119,6 +119,25 @@ onExecutionError((error) => {
 const handleCloseOutput = () => {
   outputPaneVisible.value = false
 }
+
+// Keyboard shortcut handler
+const handleKeyDown = (event: KeyboardEvent) => {
+  // Ctrl+Enter or Cmd+Enter to run code
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault()
+    handleExecute()
+  }
+}
+
+// Add event listener on mount
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown)
+})
+
+// Remove event listener on unmount
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+})
 </script>
 
 <template>
