@@ -2,7 +2,7 @@ import { ref, onMounted, onUnmounted, watch, nextTick, type Ref } from 'vue';
 import * as monaco from 'monaco-editor';
 import type { RemoteCursor, CursorPosition } from '@/types';
 import { generateRandomColor, createCursorWidget } from '@/utils/cursorWidget';
-import { EDITOR_CONFIG } from '@/constants';
+import { EDITOR_CONFIG } from '@/constants/index';
 
 export function useMonacoEditor(
   container: Ref<HTMLDivElement | null>,

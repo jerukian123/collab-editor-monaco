@@ -43,15 +43,18 @@ export function useSocket() {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function emit(event: string, data: any) {
     socketInstance?.emit(event, data);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function on(event: string, callback: (...args: any[]) => void) {
     socketInstance?.on(event, callback);
     console.log(`[useSocket] Registered handler for event: "${event}"`);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function off(event: string, callback?: (...args: any[]) => void) {
     if (callback) {
       socketInstance?.off(event, callback);

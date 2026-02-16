@@ -19,4 +19,12 @@ export default defineConfigWithVueTs(
   pluginVue.configs['flat/essential'],
   vueTsConfigs.recommended,
   skipFormatting,
+  {
+    name: 'app/custom-rules',
+    rules: {
+      'vue/multi-word-component-names': ['error', {
+        ignores: ['Avatar', 'Badge', 'Button', 'Card', 'Dialog', 'Input', 'Label', 'Select', 'Separator', 'Sidebar']
+      }]
+    }
+  }
 )
