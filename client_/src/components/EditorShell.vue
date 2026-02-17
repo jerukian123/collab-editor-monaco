@@ -16,11 +16,16 @@ interface EditorFile {
 
 interface UserInfo {
   socketId: string
+  username: string
   color: string
   currentFileId?: number
 }
 
 interface Props {
+  roomCode: string
+  isHost: boolean
+  hostId: string
+  currentSocketId: string
   files: EditorFile[]
   activeFileId: number | null
   users: Map<string, UserInfo>
@@ -32,6 +37,8 @@ interface Emits {
   (e: 'file-add', name: string, language: string): void
   (e: 'file-delete', fileId: number): void
   (e: 'content-change', fileId: number, content: string): void
+  (e: 'kick-user', socketId: string): void
+  (e: 'close-room'): void
 }
 
 const props = defineProps<Props>()
@@ -154,7 +161,13 @@ onUnmounted(() => {
       :active-file-name="activeFileName"
       :users="users"
       :output-pane-visible="outputPaneVisible"
+      :room-code="roomCode"
+      :is-host="isHost"
+      :host-id="hostId"
+      :current-socket-id="currentSocketId"
       @toggle-output="outputPaneVisible = !outputPaneVisible"
+      @kick-user="emit('kick-user', $event)"
+      @close-room="emit('close-room')"
     />
 
     <div class="flex flex-1 overflow-hidden">

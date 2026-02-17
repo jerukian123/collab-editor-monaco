@@ -156,8 +156,7 @@ const setupSocketHandlers = () => {
     socketEmit('join_editor', props.fileId)
   })
 
-  socket?.on('receive_code', ({ code, socketId }) => {
-    console.log('[MonacoEditor] "receive_code" event fired, from socketId:', socketId, 'my socket.id:', clientId.value)
+  socket?.on('receive_code', ({ code }) => { 
     if (!editor) return
 
     isReceivingRemoteUpdate = true

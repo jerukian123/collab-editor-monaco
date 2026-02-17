@@ -14,17 +14,24 @@ interface EditorFile {
 
 interface UserInfo {
   socketId: string
+  username: string
   color: string
   currentFileId?: number
 }
 
 // Socket connection (singleton)
-const { clientId, isConnected, connect, emit, on } = useSocket()
+const { clientId, connect, emit, on, off, disconnect } = useSocket()
 
 // State
 const users = ref(new Map<string, UserInfo>())
 const files = ref<EditorFile[]>([])
 const activeFileId = ref<number | null>(null)
+const username = ref('')
+const roomCode = ref('')
+const isHost = ref(false)
+const hostId = ref('')
+const sessionError = ref('')
+const isInRoom = ref(false)
 
 // Theme management
 const isDark = useDark({
@@ -34,10 +41,6 @@ const isDark = useDark({
   valueLight: '',
 })
 const monacoTheme = computed(() => isDark.value ? 'vs-dark' : 'vs-light')
-
-// Debug: Log initial theme state
-console.log('[App.vue] Initial isDark:', isDark.value)
-console.log('[App.vue] HTML element class:', document.documentElement.className)
 
 // Generate color from socket ID
 const generateColorFromSocketId = (socketId: string): string => {
@@ -50,85 +53,134 @@ const generateColorFromSocketId = (socketId: string): string => {
   return `hsl(${hue}, 70%, ${lightness}%)`
 }
 
-// Start session (connect to Socket.IO)
-const startSession = () => {
-  console.log('[App.vue] startSession() called')
+const loadEditors = (editorsList: EditorFile[]) => {
+  files.value = editorsList
+  if (editorsList.length > 0 && !activeFileId.value && editorsList[0]) {
+    activeFileId.value = editorsList[0].id
+    emit('join_editor', editorsList[0].id)
+  }
+}
 
-  // Connect using singleton pattern
+const resetToWelcome = () => {
+  isInRoom.value = false
+  roomCode.value = ''
+  isHost.value = false
+  hostId.value = ''
+  users.value = new Map()
+  files.value = []
+  activeFileId.value = null
+  disconnect()
+}
+
+const handleCreateSession = ({ mode, username: name, roomCode: code }: { mode: 'create' | 'join', username: string, roomCode?: string }) => {
+  username.value = name
+  sessionError.value = ''
+
   const socketInstance = connect()
-  console.log('[App.vue] connect() returned:', socketInstance ? 'socket instance' : 'null')
   if (!socketInstance) return
 
-  // Handle initial connection - add self to users when we receive our ID
-  on('connected', (id: string) => {
-    console.log('Connected to server:', id)
+  // Remove any previously registered handlers to prevent duplicates on retry
+  // Note: do NOT off('connected') — that would remove the internal useSocket handler that sets clientId
+  off('room_created')
+  off('room_joined')
+  off('room_error')
+  off('kicked')
+  off('room_closed')
+  off('host_transferred')
+  off('editor_added')
+  off('editor_removed')
+  off('user_joined')
+  off('user_left')
 
-    // Add self to users
-    users.value.set(id, {
-      socketId: id,
-      color: generateColorFromSocketId(id)
-    })
+  const doJoin = (id: string) => {
+    const color = generateColorFromSocketId(id)
+    if (mode === 'create') {
+      emit('create_room', { username: name, color })
+    } else {
+      emit('join_room', { username: name, color, roomCode: code })
+    }
+  }
+
+  // If socket already connected (e.g. retry after room_error), emit immediately
+  if (clientId.value) {
+    doJoin(clientId.value)
+  } else {
+    on('connected', doJoin)
+  }
+
+  on('room_created', ({ roomCode: code, editors, users: userList, isHost: host }: { roomCode: string, editors: EditorFile[], users: { socketId: string, username: string, color: string }[], isHost: boolean }) => {
+    console.log(code)
+    roomCode.value = code
+    isHost.value = host
+    hostId.value = clientId.value
+    isInRoom.value = true
+    const map = new Map<string, UserInfo>()
+    userList.forEach(u => map.set(u.socketId, u))
+    users.value = map
+    loadEditors(editors)
   })
 
-  // File management events
-  on('editors_list', (editorsList: EditorFile[]) => {
-    console.log('Received editors list:', editorsList)
-    files.value = editorsList
-    if (editorsList.length > 0 && !activeFileId.value && editorsList[0]) {
-      activeFileId.value = editorsList[0].id
-      // Join the initial file's editor room so we receive execution results
-      emit('join_editor', editorsList[0].id)
-    }
+  on('room_joined', ({ roomCode: code, editors, users: userList }: { roomCode: string, editors: EditorFile[], users: { socketId: string, username: string, color: string }[], isHost: boolean }) => {
+    roomCode.value = code
+    isHost.value = false
+    const host = userList.find(u => u.socketId !== clientId.value)
+    hostId.value = host?.socketId ?? ''
+    isInRoom.value = true
+    const map = new Map<string, UserInfo>()
+    userList.forEach(u => map.set(u.socketId, u))
+    users.value = map
+    loadEditors(editors)
+  })
+
+  on('room_error', ({ message }: { message: string }) => {
+    sessionError.value = message
+  })
+
+  on('kicked', () => {
+    resetToWelcome()
+  })
+
+  on('room_closed', () => {
+    resetToWelcome()
+  })
+
+  on('host_transferred', ({ newHostId }: { newHostId: string }) => {
+    hostId.value = newHostId
+    isHost.value = newHostId === clientId.value
   })
 
   on('editor_added', (editor: EditorFile) => {
-    console.log('Editor added:', editor)
     files.value.push(editor)
   })
 
   on('editor_removed', (editorId: number) => {
-    console.log('Editor removed:', editorId)
     const index = files.value.findIndex(f => f.id === editorId)
     if (index !== -1) {
       files.value.splice(index, 1)
-
-      // Switch to first file if deleted file was active
       if (activeFileId.value === editorId && files.value.length > 0 && files.value[0]) {
         activeFileId.value = files.value[0].id
       }
     }
   })
 
-  // User presence events
-  on('user_joined', (socketId: string) => {
-    console.log('[DEBUG] user_joined event received with socketId:', socketId)
-    console.log('[DEBUG] My clientId is:', clientId.value)
-    console.log('[DEBUG] Current users:', Array.from(users.value.keys()))
+  on('user_joined', ({ socketId, username: joinedName, color }: { socketId: string, username: string, color: string }) => {
     if (!users.value.has(socketId)) {
-      users.value.set(socketId, {
-        socketId,
-        color: generateColorFromSocketId(socketId)
-      })
-      console.log('[DEBUG] Added new user:', socketId)
+      users.value.set(socketId, { socketId, username: joinedName, color })
     }
   })
 
   on('user_left', ({ socketId }: { socketId: string }) => {
-    console.log('User left:', socketId)
     users.value.delete(socketId)
   })
 
-  on('room_users', (clients : string[]) => {
-    // Sync users map with current room users
-    const newUsersMap = new Map<string, UserInfo>()
-    clients.forEach(clientId => {
-      newUsersMap.set(clientId, {
-        socketId: clientId,
-        color: generateColorFromSocketId(clientId)
-      })
-    })
-    users.value = newUsersMap
-  })
+}
+
+const handleKickUser = (socketId: string) => {
+  emit('kick_user', { targetSocketId: socketId })
+}
+
+const handleCloseRoom = () => {
+  emit('close_room', '')
 }
 
 // File operations
@@ -140,7 +192,6 @@ const handleFileSelect = (fileId: number) => {
   activeFileId.value = fileId
   emit('join_editor', fileId)
 
-  // Update current user's file
   const currentUser = users.value.get(clientId.value)
   if (currentUser) {
     currentUser.currentFileId = fileId
@@ -152,10 +203,8 @@ const handleFileAdd = (name: string, language: string) => {
 }
 
 const handleFileDelete = (fileId: number) => {
-  console.log('Attempting to delete file with ID:', fileId)
   if (files.value.length <= 1) return
 
-  // Confirm deletion if file has content
   const file = files.value.find(f => f.id === fileId)
   if (file?.content && file.content.trim().length > 0) {
     if (!confirm(`Delete "${file.name}"? This cannot be undone.`)) {
@@ -167,7 +216,6 @@ const handleFileDelete = (fileId: number) => {
 }
 
 const handleContentChange = (fileId: number, content: string) => {
-  // Update local cache
   const file = files.value.find(f => f.id === fileId)
   if (file) {
     file.content = content
@@ -178,8 +226,9 @@ const handleContentChange = (fileId: number, content: string) => {
 <template>
   <div>
     <WelcomeScreen
-      v-if="!isConnected"
-      @start-session="startSession"
+      v-if="!isInRoom"
+      :error="sessionError"
+      @create-session="handleCreateSession"
     />
 
     <EditorShell
@@ -188,10 +237,16 @@ const handleContentChange = (fileId: number, content: string) => {
       :active-file-id="activeFileId"
       :users="users"
       :theme="monacoTheme"
+      :room-code="roomCode"
+      :is-host="isHost"
+      :host-id="hostId"
+      :current-socket-id="clientId"
       @file-select="handleFileSelect"
       @file-add="handleFileAdd"
       @file-delete="handleFileDelete"
       @content-change="handleContentChange"
+      @kick-user="handleKickUser"
+      @close-room="handleCloseRoom"
     />
   </div>
 </template>

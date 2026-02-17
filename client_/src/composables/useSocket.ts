@@ -29,8 +29,12 @@ export function useSocket() {
 
       socketInstance.on('disconnect', () => {
         isConnected.value = false;
+        clientId.value = '';
         console.log('Socket disconnected');
       });
+    } else if (socketInstance.id && !clientId.value) {
+      // HMR or re-mount: socket exists but ref was reset — restore from socket
+      clientId.value = socketInstance.id;
     }
 
     return socketInstance;
