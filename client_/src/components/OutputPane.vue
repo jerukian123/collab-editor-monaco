@@ -176,6 +176,12 @@ defineExpose({
                 {{ result.language }} • {{ result.executionTime }}ms •
                 {{ new Date(result.timestamp).toLocaleTimeString() }}
               </span>
+              <span
+                v-if="result.truncated"
+                class="rounded bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+              >
+                TRUNCATED
+              </span>
             </div>
 
             <!-- stdout -->

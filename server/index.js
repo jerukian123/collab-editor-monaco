@@ -130,6 +130,7 @@ io.on("connection", (socket) => {
                 exitCode: result.exitCode,
                 executionTime: result.executionTime,
                 language: result.language,
+                truncated: result.truncated || false,
                 user: {
                     socketId: socket.id
                 },

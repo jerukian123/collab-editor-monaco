@@ -8,6 +8,7 @@ export interface ExecutionResult {
   exitCode: number
   executionTime: number
   language: string
+  truncated?: boolean
   user: {
     socketId: string
   }

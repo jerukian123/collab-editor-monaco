@@ -1,15 +1,23 @@
 const axios = require('axios');
 
-const PISTON_API_URL = 'https://emkc.org/api/v2/piston';
+const PISTON_API_URL = process.env.PISTON_URL || 'http://localhost:2000/api/v2';
+const MAX_OUTPUT_LENGTH = 10000;
 
-// Language mapping from Monaco to Piston
+function truncateOutput(output, maxLength = MAX_OUTPUT_LENGTH) {
+  if (output.length <= maxLength) {
+    return { content: output, truncated: false };
+  }
+  return {
+    content: output.substring(0, maxLength) + '\n\n[Output truncated - exceeded 10,000 characters]',
+    truncated: true
+  };
+}
+
+// Language mapping from Monaco to Piston (versions match local Piston instance)
 const LANGUAGE_MAP = {
-  javascript: { language: 'javascript', version: '18.15.0' },
+  javascript: { language: 'javascript', version: '20.11.1' },
   typescript: { language: 'typescript', version: '5.0.3' },
-  python: { language: 'python', version: '3.10.0' },
-  java: { language: 'java', version: '15.0.2' },
-  cpp: { language: 'cpp', version: '10.2.0' },
-  c: { language: 'c', version: '10.2.0' },
+  python: { language: 'python', version: '3.12.0' },
   go: { language: 'go', version: '1.16.2' },
   rust: { language: 'rust', version: '1.68.2' },
   ruby: { language: 'ruby', version: '3.0.1' },
@@ -51,13 +59,17 @@ async function executeCode(code, language) {
     const executionTime = Date.now() - startTime;
     const result = response.data.run;
 
+    const stdoutData = truncateOutput(result.stdout || '');
+    const stderrData = truncateOutput(result.stderr || '');
+
     return {
-      stdout: result.stdout || '',
-      stderr: result.stderr || '',
+      stdout: stdoutData.content,
+      stderr: stderrData.content,
       exitCode: result.code || 0,
       executionTime,
       language: pistonConfig.language,
-      version: pistonConfig.version
+      version: pistonConfig.version,
+      truncated: stdoutData.truncated || stderrData.truncated
     };
   } catch (error) {
     console.error('[ExecutionService] Error:', error.message);
