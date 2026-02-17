@@ -76,6 +76,8 @@ const startSession = () => {
     files.value = editorsList
     if (editorsList.length > 0 && !activeFileId.value && editorsList[0]) {
       activeFileId.value = editorsList[0].id
+      // Join the initial file's editor room so we receive execution results
+      emit('join_editor', editorsList[0].id)
     }
   })
 
