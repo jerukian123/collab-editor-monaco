@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { Play, X, Trash2 } from 'lucide-vue-next'
 import type { ExecutionResult, ExecutionError } from '@/composables/useCodeExecution'
+import { useResizable } from '@/composables/useResizable'
 
 interface UserInfo {
   socketId: string
@@ -15,15 +16,28 @@ interface Props {
   isExecuting: boolean
   supportedLanguages: string[]
   users: Map<string, UserInfo>
+  width: number
 }
 
 interface Emits {
   (e: 'execute'): void
   (e: 'close'): void
+  (e: 'resize', width: number): void
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
+
+// Resize logic
+const { width, isDragging, handleMouseDown } = useResizable({
+  initialWidth: props.width,
+  minWidth: 300,
+  maxWidth: 800,
+  direction: 'right',
+  onResize: (newWidth) => {
+    emit('resize', newWidth)
+  }
+})
 
 // Execution results for current file
 const results = ref<(ExecutionResult | ExecutionError)[]>([])
@@ -82,7 +96,23 @@ defineExpose({
 </script>
 
 <template>
-  <div class="flex h-full flex-col border-l border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+  <div
+    class="relative flex h-full flex-col border-l border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
+    :style="{ width: width + 'px' }"
+  >
+    <!-- Resize handle (left edge) -->
+    <div
+      aria-hidden="true"
+      class="absolute left-0 top-0 z-10 flex h-full w-2 cursor-col-resize flex-col items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700"
+      :class="isDragging ? 'bg-blue-100 dark:bg-blue-900' : ''"
+      @mousedown="handleMouseDown"
+    >
+      <div class="flex flex-col items-center gap-1">
+        <span class="h-1 w-1 rounded-full bg-gray-400 dark:bg-gray-600" :class="isDragging ? 'bg-blue-500' : ''" />
+        <span class="h-1 w-1 rounded-full bg-gray-400 dark:bg-gray-600" :class="isDragging ? 'bg-blue-500' : ''" />
+        <span class="h-1 w-1 rounded-full bg-gray-400 dark:bg-gray-600" :class="isDragging ? 'bg-blue-500' : ''" />
+      </div>
+    </div>
     <!-- Top Bar -->
     <div class="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2 dark:border-gray-700 dark:bg-gray-800">
       <div class="flex items-center gap-2">

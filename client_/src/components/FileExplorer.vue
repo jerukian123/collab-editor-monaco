@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useStorage } from '@vueuse/core'
 import { ChevronLeft, ChevronRight, Plus, Trash2, FileCode } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { useResizable } from '@/composables/useResizable'
 import {
   Dialog,
   DialogContent,
@@ -51,6 +53,18 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
+// Sidebar width (persisted to localStorage)
+const sidebarWidth = useStorage('monaco-collab-sidebar-width', 240)
+const { width, isDragging, handleMouseDown } = useResizable({
+  initialWidth: sidebarWidth.value,
+  minWidth: 180,
+  maxWidth: 600,
+  direction: 'left',
+  onResize: (newWidth) => {
+    sidebarWidth.value = newWidth
+  }
+})
+
 // New file dialog state
 const showNewFileDialog = ref(false)
 const newFileName = ref('')
@@ -85,8 +99,9 @@ const canDeleteFile = computed(() => props.files.length > 1)
 
 <template>
   <div
-    class="flex flex-col border-r bg-muted/10 transition-all duration-200"
-    :class="expanded ? 'w-60' : 'w-12'"
+    class="relative flex flex-col border-r bg-muted/10"
+    :class="[isDragging ? '' : 'transition-all duration-200', expanded ? '' : 'w-12']"
+    :style="expanded ? { width: width + 'px' } : {}"
   >
     <!-- Header -->
     <div class="flex h-12 items-center justify-between border-b px-3">
@@ -211,6 +226,21 @@ const canDeleteFile = computed(() => props.files.length > 1)
     <div v-else class="flex-1 p-2">
       <div class="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-xs font-medium">
         {{ files.length }}
+      </div>
+    </div>
+
+    <!-- Resize handle (right edge, only when expanded) -->
+    <div
+      v-if="expanded"
+      aria-hidden="true"
+      class="absolute right-0 top-0 z-10 flex h-full w-2 cursor-col-resize flex-col items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700"
+      :class="isDragging ? 'bg-blue-100 dark:bg-blue-900' : ''"
+      @mousedown="handleMouseDown"
+    >
+      <div class="flex flex-col items-center gap-1">
+        <span class="h-1 w-1 rounded-full bg-gray-400 dark:bg-gray-600" :class="isDragging ? 'bg-blue-500' : ''" />
+        <span class="h-1 w-1 rounded-full bg-gray-400 dark:bg-gray-600" :class="isDragging ? 'bg-blue-500' : ''" />
+        <span class="h-1 w-1 rounded-full bg-gray-400 dark:bg-gray-600" :class="isDragging ? 'bg-blue-500' : ''" />
       </div>
     </div>
   </div>

@@ -25,6 +25,7 @@ import { ref, onUnmounted } from 'vue'
 export interface UseResizableOptions {
   initialWidth: number
   minWidth: number
+  
   maxWidth: number
   direction: 'left' | 'right'
   onResize?: (width: number) => void

@@ -120,6 +120,14 @@ const handleCloseOutput = () => {
   outputPaneVisible.value = false
 }
 
+// Handle OutputPane resize
+const handleOutputResize = (newWidth: number) => {
+  outputPaneWidth.value = newWidth
+  nextTick(() => {
+    editorRef.value?.layout()
+  })
+}
+
 // Keyboard shortcut handler
 const handleKeyDown = (event: KeyboardEvent) => {
   // Ctrl+Enter or Cmd+Enter to run code
@@ -183,9 +191,10 @@ onUnmounted(() => {
           :is-executing="isExecuting"
           :supported-languages="supportedLanguages"
           :users="users"
-          :style="{ width: `${outputPaneWidth}px` }"
+          :width="outputPaneWidth"
           @execute="handleExecute"
           @close="handleCloseOutput"
+          @resize="handleOutputResize"
         />
       </div>
     </div>
