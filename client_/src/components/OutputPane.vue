@@ -3,11 +3,18 @@ import { ref, computed } from 'vue'
 import { Play, X, Trash2 } from 'lucide-vue-next'
 import type { ExecutionResult, ExecutionError } from '@/composables/useCodeExecution'
 
+interface UserInfo {
+  socketId: string
+  color: string
+  currentFileId?: number
+}
+
 interface Props {
   fileId: number | null
   language: string
   isExecuting: boolean
   supportedLanguages: string[]
+  users: Map<string, UserInfo>
 }
 
 interface Emits {
@@ -55,6 +62,16 @@ const clearForFile = () => {
 // Check if result is an error
 const isError = (result: ExecutionResult | ExecutionError): result is ExecutionError => {
   return 'error' in result
+}
+
+// Get user info by socket ID
+const getUserInfo = (socketId: string) => {
+  return props.users.get(socketId)
+}
+
+// Get short user ID for display
+const getShortUserId = (socketId: string) => {
+  return socketId.substring(0, 6)
 }
 
 // Expose methods for parent
@@ -134,6 +151,17 @@ defineExpose({
           <!-- Success Result -->
           <div v-else>
             <div class="mb-2 flex items-center gap-2 text-sm">
+              <!-- User attribution -->
+              <div
+                class="flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium"
+                :style="{
+                  backgroundColor: getUserInfo(result.user.socketId)?.color ?? '#gray',
+                  color: 'white'
+                }"
+              >
+                <span>{{ getShortUserId(result.user.socketId) }}</span>
+              </div>
+
               <span
                 :class="[
                   'rounded px-2 py-0.5 font-medium',

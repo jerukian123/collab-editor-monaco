@@ -182,6 +182,7 @@ onUnmounted(() => {
           :language="activeFile?.language ?? ''"
           :is-executing="isExecuting"
           :supported-languages="supportedLanguages"
+          :users="users"
           :style="{ width: `${outputPaneWidth}px` }"
           @execute="handleExecute"
           @close="handleCloseOutput"
