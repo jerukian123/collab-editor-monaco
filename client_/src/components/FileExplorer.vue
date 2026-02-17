@@ -54,7 +54,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 // Sidebar width (persisted to localStorage)
-const sidebarWidth = useStorage('monaco-collab-sidebar-width', 240)
+const sidebarWidth = useStorage('monaco-collab-sidebar-width', 180)
 const { width, isDragging, handleMouseDown } = useResizable({
   initialWidth: sidebarWidth.value,
   minWidth: 180,

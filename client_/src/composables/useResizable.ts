@@ -21,7 +21,16 @@ export function useResizable(options: UseResizableOptions) {
     const newWidth = direction === 'left'
       ? startWidth + delta
       : startWidth - delta
-    width.value = Math.min(maxWidth, Math.max(minWidth, newWidth))
+    const clampedWidth = Math.min(maxWidth, Math.max(minWidth, newWidth))
+
+    // When hitting a min/max limit, reset the reference point so reversing
+    // direction responds immediately instead of creating a dead zone.
+    if (clampedWidth !== newWidth) {
+      startX = e.clientX
+      startWidth = clampedWidth
+    }
+
+    width.value = clampedWidth
     onResize?.(width.value)
   }
 

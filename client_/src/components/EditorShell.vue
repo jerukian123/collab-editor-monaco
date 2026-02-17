@@ -169,8 +169,7 @@ onUnmounted(() => {
         @toggle-sidebar="sidebarExpanded = !sidebarExpanded"
       />
 
-      <div class="flex flex-1">
-        <div class="flex-1">
+      <div class="flex flex-1 min-w-0">
           <MonacoEditor
             v-if="activeFile"
             :key="activeFile.id"
@@ -181,22 +180,21 @@ onUnmounted(() => {
             :theme="theme"
             @content-change="(fileId, content) => emit('content-change', fileId, content)"
           />
-        </div>
-
-        <OutputPane
-          v-if="outputPaneVisible"
-          ref="outputPaneRef"
-          :file-id="activeFileId"
-          :language="activeFile?.language ?? ''"
-          :is-executing="isExecuting"
-          :supported-languages="supportedLanguages"
-          :users="users"
-          :width="outputPaneWidth"
-          @execute="handleExecute"
-          @close="handleCloseOutput"
-          @resize="handleOutputResize"
-        />
       </div>
+
+      <OutputPane
+        v-if="outputPaneVisible"
+        ref="outputPaneRef"
+        :file-id="activeFileId"
+        :language="activeFile?.language ?? ''"
+        :is-executing="isExecuting"
+        :supported-languages="supportedLanguages"
+        :users="users"
+        :width="outputPaneWidth"
+        @execute="handleExecute"
+        @close="handleCloseOutput"
+        @resize="handleOutputResize"
+      />
     </div>
   </div>
 </template>
