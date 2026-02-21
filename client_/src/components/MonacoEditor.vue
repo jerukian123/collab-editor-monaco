@@ -50,6 +50,7 @@ let isReceivingRemoteUpdate = false
 // Throttle timers
 let codeChangeTimer: number | null = null
 let cursorMoveTimer: number | null = null
+let pendingChanges: monaco.editor.IModelContentChange[] = []
 
 // Generate consistent color from socket ID
 const generateColorFromSocketId = (socketId: string): string => {
@@ -120,6 +121,9 @@ const initEditor = () => {
   editor.onDidChangeModelContent((e) => {
     if (isApplyingRemoteOp.value || !editor) return
 
+    // Accumulate all changes across events during the debounce window
+    pendingChanges.push(...e.changes)
+
     if (codeChangeTimer) clearTimeout(codeChangeTimer)
     codeChangeTimer = window.setTimeout(() => {
       const model = editor!.getModel()
@@ -128,8 +132,9 @@ const initEditor = () => {
       const content = model.getValue()
       emit('contentChange', props.fileId, content)
 
-      // Convert Monaco changes to operations
-      const operation = monacoChangesToOperation(e.changes, model)
+      // Convert all accumulated Monaco changes to a single operation
+      const operation = monacoChangesToOperation(pendingChanges, model)
+      pendingChanges = []
       if (operation.length === 0) return
 
       // Emit operation via socket
