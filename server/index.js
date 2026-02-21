@@ -3,6 +3,8 @@ const app = express();
 const cors = require("cors");
 const http = require("http");
 const { executeCode, getSupportedLanguages } = require('./services/executionService');
+const documentService = require('./services/documentService');
+const db = require('./database');
 
 app.use(cors());
 
@@ -12,21 +14,14 @@ const { Server } = require("socket.io");
 
 const port = 3000;
 
-// TODO: Replace flat `editorsList` + `nextEditorId` with room-scoped data structures:
-// const rooms = new Map()
-// // roomCode → { editors, nextEditorId, users, hostId, expiryTimer }
-// // users: Map<socketId, { username, color }>
-// const socketToRoom = new Map()
-// // socketId → roomCode
+// Initialize database on startup
+db.initializeDatabase().catch(err => {
+  console.error('[Server] Failed to initialize database:', err);
+  process.exit(1);
+});
 
-const rooms = new Map()
-const socketToRoom = new Map()
-
-// Store the list of editors
-let editorsList = [
-    { id: 1, name: 'main.js', language: 'javascript' }
-];
-let nextEditorId = 2;
+const rooms = new Map();
+const socketToRoom = new Map();
 
 // TODO: Add generateRoomCode() helper — 6 chars from 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', collision-checked against `rooms`
 
@@ -53,46 +48,66 @@ io.on("connection", (socket) => {
     console.log(`[${new Date().toISOString()}] User connected: ${socket.id}`);
     socket.emit("connected", socket.id);
 
-    // TODO: Add create_room handler ({ username, color }):
-    // - Call generateRoomCode() to get a unique code
-    // - Create room entry in `rooms`: { editors: [...default], nextEditorId: 2, users: new Map(), hostId: socket.id, expiryTimer: null }
-    // - room.users.set(socket.id, { username, color }); socketToRoom.set(socket.id, roomCode); socket.join(roomCode)
-    // - Emit room_created { roomCode, editors, users, isHost: true } to caller
+    socket.on("create_room", async ({ username, color }) => {
+        try {
+            const roomCode = generateRoomCode();
+            const defaultEditors = [{ id: 1, name: 'main.js', language: 'javascript' }];
 
-    socket.on("create_room", ({ username, color }) => {
-        const roomCode = generateRoomCode();
-        const roomData = {
-            editors: [...editorsList],
-            nextEditorId: nextEditorId,
-            users: new Map([[socket.id, { username, color }]]),
-            hostId: socket.id,
-            expiryTimer: null
+            // Initialize editor documents with database persistence
+            const editorDocs = await documentService.initializeEditorDocs(roomCode, defaultEditors);
+
+            const roomData = {
+                editors: [...defaultEditors],
+                nextEditorId: 2,
+                users: new Map([[socket.id, { username, color }]]),
+                hostId: socket.id,
+                expiryTimer: null,
+                editorDocs: editorDocs // NEW: server-authoritative state
+            };
+
+            const room = rooms.set(roomCode, roomData).get(roomCode);
+            socketToRoom.set(socket.id, roomCode);
+            socket.join(roomCode);
+            socket.emit("room_created", {
+                roomCode,
+                editors: room.editors,
+                users: Array.from(room.users.entries()).map(([id, info]) => ({ socketId: id, ...info })),
+                isHost: true
+            });
+        } catch (error) {
+            console.error('[create_room] Error:', error);
+            socket.emit("room_error", { message: 'Failed to create room' });
         }
-        const room = rooms.set(roomCode, roomData).get(roomCode);
-        socketToRoom.set(socket.id, roomCode);
-        socket.join(roomCode);
-        socket.emit("room_created", { roomCode, editors: room.editors, users: Array.from(room.users.entries()).map(([id, info]) => ({ socketId: id, ...info })), isHost: true });
     });
 
-    // TODO: Add join_room handler ({ username, color, roomCode }):
-    // - If room doesn't exist → emit room_error { message: 'Room not found' } and return
-    // - clearTimeout(room.expiryTimer); room.expiryTimer = null
-    // - room.users.set(socket.id, { username, color }); socketToRoom.set(socket.id, roomCode); socket.join(roomCode)
-    // - Emit room_joined { roomCode, editors, users, isHost: false } to caller
-    // - Broadcast user_joined { socketId: socket.id, username, color } to rest of room
+    socket.on("join_room", async ({ username, color, roomCode }) => {
+        try {
+            if (!rooms.has(roomCode)) {
+                socket.emit("room_error", { message: 'Room not found' });
+                return;
+            }
 
-    socket.on("join_room", ({ username, color, roomCode }) => {
-       if(!rooms.has(roomCode)){
-            socket.emit("room_error", { message: 'Room not found' });
-            return;
-       } 
+            const room = rooms.get(roomCode);
 
-       const room = rooms.get(roomCode);
-       room.users.set(socket.id, {username, color});
-       socketToRoom.set(socket.id,roomCode);
-       socket.join(roomCode)
-       socket.emit("room_joined", {roomCode, editors: room.editors, users: Array.from(room.users.entries()).map(([id,info]) => ({socketId: id, ...info}))});
-       socket.to(roomCode).emit("user_joined", { socketId: socket.id, username, color });
+            // Load editor documents if not in memory (server restart scenario)
+            if (!room.editorDocs) {
+                room.editorDocs = await documentService.loadEditorDocs(roomCode);
+            }
+
+            room.users.set(socket.id, { username, color });
+            socketToRoom.set(socket.id, roomCode);
+            socket.join(roomCode);
+
+            socket.emit("room_joined", {
+                roomCode,
+                editors: room.editors,
+                users: Array.from(room.users.entries()).map(([id, info]) => ({ socketId: id, ...info }))
+            });
+            socket.to(roomCode).emit("user_joined", { socketId: socket.id, username, color });
+        } catch (error) {
+            console.error('[join_room] Error:', error);
+            socket.emit("room_error", { message: 'Failed to join room' });
+        }
     });
 
 
@@ -137,57 +152,83 @@ io.on("connection", (socket) => {
         rooms.delete(roomCode);
     });
 
-    // Add new editor
-    // TODO: Refactor — get roomCode via socketToRoom.get(socket.id), guard if no room,
-    // use room.editors and room.nextEditorId++, broadcast via io.to(roomCode).emit(...)
-    socket.on("add_editor", (editor) => {
+    socket.on("add_editor", async (editor) => {
         const roomCode = socketToRoom.get(socket.id);
         if (!roomCode) {
             socket.emit("room_error", { message: 'You are not in a room' });
             return;
         }
+
         const room = rooms.get(roomCode);
         const newEditor = {
             id: room.nextEditorId++,
             name: editor.name,
             language: editor.language
         };
+
         room.editors.push(newEditor);
+
+        // Initialize document state
+        room.editorDocs[newEditor.id] = {
+            content: '',
+            revision: 0,
+            history: []
+        };
+
+        try {
+            await db.addEditorDocument(roomCode, newEditor.id);
+        } catch (error) {
+            console.error('[add_editor] Database error:', error);
+        }
+
         console.log(`[${new Date().toISOString()}] Added editor:`, newEditor.id);
         io.to(roomCode).emit("editor_added", newEditor);
     });
     
-    // Remove editor
-    // TODO: Refactor — get roomCode via socketToRoom.get(socket.id), guard if no room,
-    // operate on room.editors, broadcast via io.to(roomCode).emit(...)
-    socket.on("remove_editor", (editorId) => {
+    socket.on("remove_editor", async (editorId) => {
         const roomCode = socketToRoom.get(socket.id);
         if (!roomCode) {
             socket.emit("room_error", { message: 'You are not in a room' });
             return;
         }
+
         const room = rooms.get(roomCode);
         const index = room.editors.findIndex(e => e.id === editorId);
-        console.log(`[${new Date().toISOString()}] remove editor:`, editorId);
+
         if (index !== -1 && room.editors.length > 1) {
             room.editors.splice(index, 1);
+            delete room.editorDocs[editorId];
+
+            try {
+                await db.removeEditorDocument(roomCode, editorId);
+            } catch (error) {
+                console.error('[remove_editor] Database error:', error);
+            }
+
             io.to(roomCode).emit("editor_removed", editorId);
         }
     });
     
-    // Join a specific editor room
-    // TODO: Refactor — get roomCode via socketToRoom.get(socket.id), guard if no room,
-    // scope editor room key as `${roomCode}-editor-${editorId}`, broadcast room_users and user_joined within that scoped key
-    socket.on("join_editor", (editorId) => {
-
+    socket.on("join_editor", async (editorId) => {
         const roomCode = socketToRoom.get(socket.id);
         if (!roomCode) {
             socket.emit("room_error", { message: 'You are not in a room' });
             return;
         }
-        const room = `${roomCode}-editor-${editorId}`;
 
+        const room = `${roomCode}-editor-${editorId}`;
         socket.join(room);
+
+        // Send current document state to joining client
+        const roomData = rooms.get(roomCode);
+        if (roomData?.editorDocs[editorId]) {
+            const editorDoc = roomData.editorDocs[editorId];
+            socket.emit("editor_synced", {
+                editorId,
+                content: editorDoc.content,
+                revision: editorDoc.revision
+            });
+        }
     });
     
     // Leave a specific editor room
@@ -230,11 +271,15 @@ io.on("connection", (socket) => {
         }
 
         if (room.users.size === 0) {
-            // Start expiry timer for empty room
-            room.expiryTimer = setTimeout(() => {
-                rooms.delete(roomCode);
-                console.log(`[${new Date().toISOString()}] Room ${roomCode} expired and deleted`);
-            }, 30 * 60 * 1000); // 30 minutes
+            room.expiryTimer = setTimeout(async () => {
+                try {
+                    await db.cleanupRoom(roomCode);
+                    rooms.delete(roomCode);
+                    console.log(`[${new Date().toISOString()}] Room ${roomCode} expired and deleted`);
+                } catch (error) {
+                    console.error('[disconnect] Room cleanup error:', error);
+                }
+            }, 30 * 60 * 1000);
         }
         io.to(roomCode).emit("user_left", { socketId: socket.id });
     })
@@ -242,7 +287,66 @@ io.on("connection", (socket) => {
     // Track message count per socket
     let sendCodeCount = 0;
     let cursorPositionCount = 0;
-    
+
+    // NEW: Operation-based synchronization
+    socket.on("send_operation", async (data) => {
+        const { editorId, operation, baseRevision } = data;
+        const roomCode = socketToRoom.get(socket.id);
+
+        if (!roomCode) return;
+
+        const room = rooms.get(roomCode);
+        if (!room || !room.editorDocs[editorId]) {
+            socket.emit("operation_error", { message: 'Editor not found' });
+            return;
+        }
+
+        try {
+            const editorDoc = room.editorDocs[editorId];
+            const { transformedOp, newRevision } = documentService.applyOperationToDoc(
+                editorDoc,
+                operation,
+                baseRevision
+            );
+
+            // Schedule database write
+            documentService.scheduleWrite(roomCode, editorId, editorDoc.content, newRevision);
+
+            // Broadcast to all clients in the editor room
+            const editorRoom = `${roomCode}-editor-${editorId}`;
+            io.to(editorRoom).emit("receive_operation", {
+                editorId,
+                operation: transformedOp,
+                revision: newRevision,
+                authorSocketId: socket.id
+            });
+
+            console.log(`[${new Date().toISOString()}] Applied operation to ${roomCode}/${editorId} rev ${newRevision}`);
+        } catch (error) {
+            console.error('[send_operation] Error:', error);
+            socket.emit("operation_error", { message: error.message });
+        }
+    });
+
+    // NEW: Sync editor content for late joiners
+    socket.on("request_sync", (editorId) => {
+        const roomCode = socketToRoom.get(socket.id);
+        if (!roomCode) return;
+
+        const room = rooms.get(roomCode);
+        if (!room || !room.editorDocs[editorId]) {
+            socket.emit("sync_error", { message: 'Editor not found' });
+            return;
+        }
+
+        const editorDoc = room.editorDocs[editorId];
+        socket.emit("editor_synced", {
+            editorId,
+            content: editorDoc.content,
+            revision: editorDoc.revision
+        });
+    });
+
     socket.on("send_code", (data) => {
         sendCodeCount++;
         const roomCode = socketToRoom.get(socket.id);
@@ -319,4 +423,11 @@ io.on("connection", (socket) => {
 
 server.listen(3000, () => {
     console.log(`Server is running on port ${port}`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+    console.log('[Server] SIGTERM received, flushing writes...');
+    await documentService.flushPendingWrites();
+    process.exit(0);
 });
