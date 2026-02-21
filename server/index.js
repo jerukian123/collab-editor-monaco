@@ -348,16 +348,12 @@ io.on("connection", (socket) => {
     });
 
     socket.on("send_code", (data) => {
-        sendCodeCount++;
+        console.warn('[DEPRECATED] send_code event received - use send_operation instead');
+
         const roomCode = socketToRoom.get(socket.id);
         if (!roomCode) return;
 
-        // Warning if too many messages
-        if (sendCodeCount > 100) {
-            console.warn(`[${socket.id}] ⚠️  WARNING: High message count (${sendCodeCount})`);
-        }
-
-        // Broadcast only to users in the same editor room
+        // Legacy support: still relay for backward compatibility
         const editorRoom = `${roomCode}-editor-${data.editorId}`;
         socket.to(editorRoom).emit("receive_code", data);
     })
