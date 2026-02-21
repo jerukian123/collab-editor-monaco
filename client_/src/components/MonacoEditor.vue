@@ -2,6 +2,7 @@
 import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import * as monaco from 'monaco-editor'
 import { useSocket } from '@/composables/useSocket'
+import { useOperationalTransform } from '@/composables/useOperationalTransform'
 
 interface Props {
   fileId: number
@@ -26,6 +27,15 @@ const emit = defineEmits<{
 
 // Socket.IO connection (using singleton)
 const { socket, clientId, emit: socketEmit } = useSocket()
+
+// Operational Transform composable
+const {
+  currentRevision,
+  isApplyingRemoteOp,
+  monacoChangesToOperation,
+  applyOperationToEditor,
+  setRevision
+} = useOperationalTransform()
 
 // Monaco editor instance
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
@@ -107,20 +117,28 @@ const initEditor = () => {
   })
 
   // Listen for content changes
-  editor.onDidChangeModelContent(() => {
-    if (isReceivingRemoteUpdate || !editor) return
+  editor.onDidChangeModelContent((e) => {
+    if (isApplyingRemoteOp.value || !editor) return
 
     if (codeChangeTimer) clearTimeout(codeChangeTimer)
     codeChangeTimer = window.setTimeout(() => {
-      const content = editor!.getValue()
+      const model = editor!.getModel()
+      if (!model) return
+
+      const content = model.getValue()
       emit('contentChange', props.fileId, content)
 
-      // Emit code changes via socket
-      socketEmit('send_code', {
+      // Convert Monaco changes to operations
+      const operation = monacoChangesToOperation(e.changes, model)
+      if (operation.length === 0) return
+
+      // Emit operation via socket
+      socketEmit('send_operation', {
         editorId: props.fileId,
-        code: content
+        operation,
+        baseRevision: currentRevision.value
       })
-    }, 500)
+    }, 300)
   })
 
   // Listen for cursor position changes
@@ -146,26 +164,45 @@ const initEditor = () => {
 
 // Setup Socket.IO event handlers
 const setupSocketHandlers = () => {
-  // If already connected, join room immediately (connect event already fired)
   if (socket?.connected) {
     socketEmit('join_editor', props.fileId)
   }
 
-  // Handle reconnections
   socket?.on('connect', () => {
     socketEmit('join_editor', props.fileId)
   })
 
-  socket?.on('receive_code', ({ code }) => { 
+  // NEW: Receive operations instead of full code
+  socket?.on('receive_operation', ({ operation, revision, authorSocketId, editorId }) => {
+    if (editorId !== props.fileId) return
+    if (authorSocketId === clientId.value) {
+      // This is our own operation acknowledged
+      currentRevision.value = revision
+      return
+    }
+
     if (!editor) return
 
-    isReceivingRemoteUpdate = true
-    const position = editor.getPosition()
-    editor.setValue(code)
-    if (position) editor.setPosition(position)
-    isReceivingRemoteUpdate = false
+    applyOperationToEditor(operation, editor)
+    currentRevision.value = revision
   })
 
+  // NEW: Sync event for late joiners
+  socket?.on('editor_synced', ({ editorId, content, revision }) => {
+    if (editorId !== props.fileId) return
+    if (!editor) return
+
+    isApplyingRemoteOp.value = true
+    const position = editor.getPosition()
+    editor.setValue(content)
+    if (position) editor.setPosition(position)
+    isApplyingRemoteOp.value = false
+
+    setRevision(revision)
+    console.log(`[MonacoEditor] Synced to revision ${revision}`)
+  })
+
+  // Keep existing cursor and user_left handlers
   socket?.on('receive_cursor_position', ({ position, socketId }) => {
     console.log('[MonacoEditor] "receive_cursor_position" event fired, from socketId:', socketId, 'my socket.id:', clientId.value)
     if (!editor) return
@@ -173,12 +210,10 @@ const setupSocketHandlers = () => {
     const color = generateColorFromSocketId(socketId)
     const widgetId = `cursor-${socketId}`
 
-    // Remove old widget if exists
     if (cursorWidgets.has(widgetId)) {
       editor.removeContentWidget(cursorWidgets.get(widgetId)!)
     }
 
-    // Create and add new widget
     const widget = createCursorWidget(socketId, position, color)
     editor.addContentWidget(widget)
     cursorWidgets.set(widgetId, widget)
