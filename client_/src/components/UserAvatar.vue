@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 interface Props {
-  socketId: string
+  userName: string
   color: string
   isHost?: boolean
   canKick?: boolean
@@ -13,7 +13,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{ kick: [] }>()
 
 const fallbackText = computed(() => {
-  return props.socketId.substring(0, 2).toUpperCase()
+  return props.userName.substring(0, 2).toUpperCase()
 })
 </script>
 
@@ -25,7 +25,7 @@ const fallbackText = computed(() => {
         backgroundColor: color,
         borderColor: 'hsl(var(--border))'
       }"
-      :title="socketId"
+      :title="userName"
     >
       <AvatarFallback
         class="text-xs font-semibold text-white"

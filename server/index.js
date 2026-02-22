@@ -23,8 +23,6 @@ db.initializeDatabase().catch(err => {
 const rooms = new Map();
 const socketToRoom = new Map();
 
-// TODO: Add generateRoomCode() helper — 6 chars from 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', collision-checked against `rooms`
-
 const io = new Server(server, {
     cors: {
         origin: "*",
@@ -111,12 +109,6 @@ io.on("connection", (socket) => {
     });
 
 
-    // TODO: Add kick_user handler ({ targetSocketId }):
-    // - Guard: socket.id must equal room.hostId
-    // - Emit kicked { message: 'You were kicked from the room' } to targetSocketId
-    // - io.sockets.sockets.get(targetSocketId)?.leave(roomCode)
-    // - Remove from room.users and socketToRoom
-    // - Broadcast user_left { socketId: targetSocketId } to room
 
     socket.on("kick_user", ({ targetSocketId }) => {
         const roomCode = socketToRoom.get(socket.id);
@@ -133,10 +125,6 @@ io.on("connection", (socket) => {
         io.to(roomCode).emit("user_left", { socketId: targetSocketId });
     });
 
-    // TODO: Add close_room handler (no payload):
-    // - Guard: socket.id must equal room.hostId
-    // - Broadcast room_closed { message: 'Host closed the room' } to room
-    // - clearTimeout(room.expiryTimer); remove all users from socketToRoom; rooms.delete(roomCode)
 
     socket.on("close_room", () => {
         const roomCode = socketToRoom.get(socket.id);
@@ -231,9 +219,6 @@ io.on("connection", (socket) => {
         }
     });
     
-    // Leave a specific editor room
-    // TODO: Refactor — get roomCode via socketToRoom.get(socket.id), guard if no room,
-    // use scoped editor room key `${roomCode}-editor-${editorId}` for leave and broadcast
     socket.on("leave_editor", (editorId) => {
         const roomCode = socketToRoom.get(socket.id);
         if (!roomCode) {
@@ -247,7 +232,6 @@ io.on("connection", (socket) => {
 
     socket.on("disconnect", () => {
         console.log(`[${new Date().toISOString()}] User disconnected: ${socket.id}`);
-        // TODO: Refactor disconnect handler:
         const roomCode = socketToRoom.get(socket.id);
         if (!roomCode) {
             return; // User was not in a room

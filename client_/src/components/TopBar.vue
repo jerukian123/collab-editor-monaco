@@ -104,7 +104,7 @@ function confirmCloseRoom() {
           <UserAvatar
             v-for="user in visibleUsers"
             :key="user.socketId"
-            :socket-id="user.socketId"
+            :user-name="user.username"
             :color="user.color"
             :is-host="user.socketId === hostId"
             :can-kick="isHost && user.socketId !== currentSocketId"
