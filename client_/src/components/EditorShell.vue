@@ -6,6 +6,7 @@ import FileExplorer from './FileExplorer.vue'
 import MonacoEditor from './MonacoEditor.vue'
 import OutputPane from './OutputPane.vue'
 import { useCodeExecution } from '@/composables/useCodeExecution'
+import { useToast } from '@/composables/useToast'
 
 interface EditorFile {
   id: number
@@ -63,6 +64,7 @@ const {
   onExecutionResult,
   onExecutionError
 } = useCodeExecution()
+const { addToast } = useToast()
 
 // Get active file data
 const activeFile = computed(() => {
@@ -116,10 +118,16 @@ const handleExecute = () => {
 // Listen for execution results
 onExecutionResult((result) => {
   outputPaneRef.value?.addResult(result)
+  if (result.exitCode === 0) {
+    addToast({ message: 'Code executed successfully', type: 'success' })
+  } else {
+    addToast({ message: 'Execution finished with errors', type: 'error' })
+  }
 })
 
 onExecutionError((error) => {
   outputPaneRef.value?.addResult(error)
+  addToast({ message: 'Execution failed', type: 'error' })
 })
 
 // Close output pane
