@@ -35,7 +35,8 @@ const overflowCount = computed(() => Math.max(0, userList.value.length - 5))
 
 const copiedRoomCode = ref(false)
 function copyRoomCode() {
-  navigator.clipboard.writeText(props.roomCode)
+  const inviteUrl = `${window.location.origin}?room=${props.roomCode}`
+  navigator.clipboard.writeText(inviteUrl)
   copiedRoomCode.value = true
   setTimeout(() => {
     copiedRoomCode.value = false
@@ -73,7 +74,7 @@ function confirmCloseRoom() {
               ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
               : 'bg-muted text-muted-foreground hover:bg-muted/80'
           ]"
-          :title="copiedRoomCode ? 'Copied!' : 'Click to copy room code'"
+          :title="copiedRoomCode ? 'Copied!' : 'Click to copy invite link'"
           @click="copyRoomCode"
         >
           {{ copiedRoomCode ? 'Copied!' : roomCode }}
