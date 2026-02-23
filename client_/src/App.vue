@@ -4,6 +4,7 @@ import { useDark } from '@vueuse/core'
 import { useSocket } from './composables/useSocket'
 import WelcomeScreen from './components/WelcomeScreen.vue'
 import EditorShell from './components/EditorShell.vue'
+import ToastContainer from './components/ToastContainer.vue'
 
 interface EditorFile {
   id: number
@@ -248,5 +249,7 @@ const handleContentChange = (fileId: number, content: string) => {
       @kick-user="handleKickUser"
       @close-room="handleCloseRoom"
     />
+
+    <ToastContainer />
   </div>
 </template>
