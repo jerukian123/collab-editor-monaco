@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Code2, Users, Zap, Plus, LogIn, AlertCircle } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,7 +20,25 @@ const localError = ref('')
 
 const displayError = computed(() => localError.value || props.error || '')
 
+onMounted(() => {
+  // Restore saved username
+  const saved = localStorage.getItem('collab_username')
+  if (saved) username.value = saved
+
+  // Pre-fill room code from URL query param
+  const params = new URLSearchParams(window.location.search)
+  const roomParam = params.get('room')
+  if (roomParam) {
+    roomCode.value = roomParam
+    activeTab.value = 'join'
+  }
+})
+
 const clearError = () => { localError.value = '' }
+const handleUsernameInput = () => {
+  clearError()
+  if (username.value.trim()) localStorage.setItem('collab_username', username.value.trim())
+}
 
 const handleCreate = () => {
   if (!username.value.trim()) {
@@ -69,7 +87,7 @@ const features = [
       <ThemeToggle />
     </div>
 
-    <Card class="w-full max-w-lg">
+    <Card class="w-full max-w-lg animate-enter">
       <CardHeader class="text-center pb-2">
         <CardTitle class="text-3xl font-bold">
           Collaborative Code Editor
@@ -108,7 +126,7 @@ const features = [
             v-model="username"
             placeholder="How others will see you"
             autocomplete="off"
-            @input="clearError"
+            @input="handleUsernameInput"
             @keyup.enter="activeTab === 'create' ? handleCreate() : handleJoin()"
           />
         </div>
@@ -207,3 +225,20 @@ const features = [
     </Card>
   </div>
 </template>
+
+<style scoped>
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-enter {
+  animation: enter 0.35s ease-out both;
+}
+</style>
