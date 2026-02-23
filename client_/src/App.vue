@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useDark } from '@vueuse/core'
 import { useSocket } from './composables/useSocket'
+import { useToast } from './composables/useToast'
 import WelcomeScreen from './components/WelcomeScreen.vue'
 import EditorShell from './components/EditorShell.vue'
 import ToastContainer from './components/ToastContainer.vue'
@@ -22,6 +23,7 @@ interface UserInfo {
 
 // Socket connection (singleton)
 const { clientId, connect, emit, on, off, disconnect } = useSocket()
+const { addToast } = useToast()
 
 // State
 const users = ref(new Map<string, UserInfo>())
@@ -119,6 +121,7 @@ const handleCreateSession = ({ mode, username: name, roomCode: code }: { mode: '
     userList.forEach(u => map.set(u.socketId, u))
     users.value = map
     loadEditors(editors)
+    history.replaceState(null, '', `?room=${code}`)
   })
 
   on('room_joined', ({ roomCode: code, editors, users: userList }: { roomCode: string, editors: EditorFile[], users: { socketId: string, username: string, color: string }[], isHost: boolean }) => {
@@ -138,16 +141,21 @@ const handleCreateSession = ({ mode, username: name, roomCode: code }: { mode: '
   })
 
   on('kicked', () => {
+    addToast({ message: 'You were removed from the room', type: 'error', duration: 6000 })
     resetToWelcome()
   })
 
   on('room_closed', () => {
+    addToast({ message: 'The room was closed by the host', type: 'warning', duration: 6000 })
     resetToWelcome()
   })
 
   on('host_transferred', ({ newHostId }: { newHostId: string }) => {
     hostId.value = newHostId
     isHost.value = newHostId === clientId.value
+    if (newHostId === clientId.value) {
+      addToast({ message: 'You are now the host', type: 'success' })
+    }
   })
 
   on('editor_added', (editor: EditorFile) => {
@@ -167,10 +175,15 @@ const handleCreateSession = ({ mode, username: name, roomCode: code }: { mode: '
   on('user_joined', ({ socketId, username: joinedName, color }: { socketId: string, username: string, color: string }) => {
     if (!users.value.has(socketId)) {
       users.value.set(socketId, { socketId, username: joinedName, color })
+      addToast({ message: `${joinedName} joined the room`, type: 'info' })
     }
   })
 
   on('user_left', ({ socketId }: { socketId: string }) => {
+    const leavingUser = users.value.get(socketId)
+    if (leavingUser) {
+      addToast({ message: `${leavingUser.username} left the room`, type: 'info' })
+    }
     users.value.delete(socketId)
   })
 
