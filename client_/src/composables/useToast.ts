@@ -1,38 +1,38 @@
-import {ref} from 'vue';
+import { ref } from 'vue'
 
-export type ToastType = 'success' | 'error' | 'info' | 'warning';
-
-const toasts = ref<Toast[]>([]);
-
-let idCounter = 0;
+export type ToastType = 'info' | 'success' | 'warning' | 'error'
 
 export interface Toast {
-    id: number;
-    type: ToastType;
-    message: string;
-    duration: number;
+  id: string
+  message: string
+  type: ToastType
+  duration: number
 }
 
+// Module-level state — shared across all component instances (singleton)
+const toasts = ref<Toast[]>([])
+
+let _idCounter = 0
+
 export function useToast() {
-    const addToast = (type: ToastType, message: string, duration = 3000) => {
-        const id = idCounter++;
-        toasts.value.push({ id, type, message, duration });
+  const addToast = (options: { message: string; type: ToastType; duration?: number }) => {
+    const id = String(++_idCounter)
+    const toast: Toast = {
+      id,
+      message: options.message,
+      type: options.type,
+      duration: options.duration ?? 4000,
+    }
+    toasts.value.push(toast)
+    setTimeout(() => removeToast(id), toast.duration)
+  }
 
-        setTimeout(() => {
-            removeToast(id);
-        }, duration);
-    };
+  const removeToast = (id: string) => {
+    const index = toasts.value.findIndex(t => t.id === id)
+    if (index !== -1) {
+      toasts.value.splice(index, 1)
+    }
+  }
 
-    const removeToast = (id: number) => {
-        const index = toasts.value.findIndex(toast => toast.id === id);
-        if (index !== -1) {
-            toasts.value.splice(index, 1);
-        }
-    };
-
-    return {
-        toasts,
-        addToast,
-        removeToast
-    };
+  return { toasts, addToast, removeToast }
 }
