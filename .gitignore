@@ -1,2 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build output
+client_/dist/
+client_/test-results/
+
+client_/.vscode/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Playwright MCP screenshots
+.playwright-mcp/
+
 # Git worktrees
 .worktrees/
+
+# Docs and markdown
+*.md
+docs/
+
+# Tests
+client_/tests/
+client_/playwright.config.ts
+
+.claude/
